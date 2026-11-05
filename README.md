@@ -7,29 +7,32 @@ An edge-native, privacy-preserving threat detection system built for the **Bhara
 ## Architecture Overview
 
 The system uses a **two-stage gated architecture** designed to minimize memory usage and battery drain on resource-constrained mobile SoCs:
-+--------------------------------+
-              |       Incoming SMS Stream      |
-              +--------------------------------+
-                              |
-                              v
-              +--------------------------------+
-              |   Stage 1: Primary Detector    |
-              |  - TF-IDF + Multinomial NB     |
-              |  - Link & Urgency Heuristics   |
-              +--------------------------------+
-                              |
-                    [Risk Score >= 0.5?]
-                           /     \
-                   No     /       \   Yes
-                         v         v
-           +---------------+     +--------------------------------+
-           | Verdict: SAFE |     | Stage 2: Reasoning Engine      |
-           | (LLM Skipped) |     | - Quantized Llama 3.2 1B       |
-           +---------------+     |   via ExecuTorch               |
-                                 | - Generates 2-sentence advice  |
-                                 +--------------------------------+
 
- 1. **Stage 1: Fast Heuristic & ML Filter (<5 ms):**
+```text
+                  +--------------------------------+
+                  |       Incoming SMS Stream      |
+                  +--------------------------------+
+                                  |
+                                  v
+                  +--------------------------------+
+                  |   Stage 1: Primary Detector    |
+                  |  - TF-IDF + Multinomial NB     |
+                  |  - Link & Urgency Heuristics   |
+                  +--------------------------------+
+                                  |
+                        [Risk Score >= 0.5?]
+                               /     \
+                       No     /       \   Yes
+                             v         v
+               +---------------+     +--------------------------------+
+               | Verdict: SAFE |     | Stage 2: Reasoning Engine      |
+               | (LLM Skipped) |     | - Quantized Llama 3.2 1B       |
+               +---------------+     |   via ExecuTorch               |
+                                     | - Generates 2-sentence advice  |
+                                     +--------------------------------+
+```
+
+1. **Stage 1: Fast Heuristic & ML Filter (<5 ms):**
    * Uses TF-IDF vectorization with Multinomial Naive Bayes trained on standard SMS corpora, coupled with regex-based indicator extraction.
    * Produces structured JSON evidence: threat label, composite risk score, link presence, and pressure keywords.
    * **Accuracy:** 97.31% with 100% precision on scam classes.
@@ -42,13 +45,15 @@ The system uses a **two-stage gated architecture** designed to minimize memory u
 
 ## Target Hardware & Runtime Constraints
 
-* **Target Device:** Samsung Galaxy A15 (Arm64 architecture)
-* **Execution Environment:** Fully offline (verified in Airplane Mode)
-* **Primary Stack:** Python 3.11, scikit-learn, joblib, ExecuTorch
+- **Target Device:** Samsung Galaxy A15 (Arm64 architecture)
+- **Execution Environment:** Fully offline (verified in Airplane Mode)
+- **Primary Stack:** Python 3.11, scikit-learn, joblib, ExecuTorch
 
 ---
 
 ## Project Structure
+
+```text
 bharat-ai-soc/
 ├── app.py                   # Main inference runner and Stage 2 gating pipeline
 ├── train_full_dataset.py    # Training script on full UCI dataset + local scam samples
@@ -57,6 +62,7 @@ bharat-ai-soc/
 ├── requirements.txt         # Runtime and build dependencies
 ├── .gitignore               # Ignored cache, bytecode, and environment files
 └── README.md                # System documentation
+```
 
 ---
 
@@ -72,7 +78,7 @@ pip install -r requirements.txt
 python train_full_dataset.py
 ```
 
-### 3. Run Inference Engine
+### 3. Run Inference Engine 
 ```bash
 python app.py
 ```
