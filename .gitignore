@@ -1,4 +1,68 @@
+# Byte-compiled / optimized / DLL files
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Environment variables & secrets
+.env
+.env.local
+*.env
+
+# IDE & Editor settings
 .vscode/
-*.log
+.idea/
+*.swp
+*.swo
+*~
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints
+
+# Datasets and compressed files
+*.zip
+*.tar.gz
+*.rar
+smsspamcollection/
+SMSSpamCollection
+
+# ExecuTorch binaries & heavy LLM model weights
+*.pte
+*.bin
+tokenizer.model
+*.safetensors
+*.onnx
+
+# OS generated files
+.DS_Store
+Thumbs.db
