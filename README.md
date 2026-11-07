@@ -97,9 +97,11 @@ python train_full_dataset.py
 ```
 
 ### 3. Run Inference Pipeline
+Run inference on any SMS text:
 ```bash
-python app.py "URGENT: Your SBI account 4029 is blocked. Update PAN immediately at https://sbi-kyc-update.com/verify to avoid legal penalty"
+python app.py "<YOUR_SMS_TEXT>"
 ```
+
 ---
 
 ## On-Device Deployment (Samsung Galaxy A15 via ADB)
