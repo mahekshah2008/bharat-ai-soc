@@ -38,6 +38,8 @@ venv.bak/
 .env
 .env.local
 *.env
+*token*
+*key*
 
 # IDE & Editor settings
 .vscode/
@@ -49,19 +51,26 @@ venv.bak/
 # Jupyter Notebook checkpoints
 .ipynb_checkpoints
 
-# Datasets and compressed files
+# Datasets and compressed archives
 *.zip
 *.tar.gz
 *.rar
 smsspamcollection/
 SMSSpamCollection
+*.csv
 
-# ExecuTorch binaries & heavy LLM model weights
+# Heavy ML Models & Pre-trained Weights (Exclude large blobs)
 *.pte
 *.bin
 tokenizer.model
 *.safetensors
 *.onnx
+sms_classifier.joblib
+*.joblib
+*.pkl
+
+# Explicitly track essential edge deployment parameters
+!model_params.json
 
 # OS generated files
 .DS_Store
