@@ -1,3 +1,14 @@
+# -------------------------------------------------------------------------
+# Bharat AI-SoC Dependency Specification
+# 
+# NOTE: ON-DEVICE INFERENCE (ARM64 / Termux) REQUIRES ZERO DEPENDENCIES!
+# Pure Python standard library is used along with 'model_params.json'.
+#
+# The packages below are ONLY needed on the host PC if you plan to retrain
+# the model from raw CSV data or re-export 'model_params.json'.
+# -------------------------------------------------------------------------
+
+# Host Offline Training & Parameter Export Only
 scikit-learn>=1.4.0
 pandas>=2.0.0
 joblib>=1.3.0
