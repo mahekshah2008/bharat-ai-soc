@@ -1,27 +1,30 @@
 import sys
+import json
 from detector import extract_threat_evidence
 from llm_engine import Stage2ReasoningEngine
 
 def run_pipeline(sms_text: str):
     print(f"\nAnalyzing: \"{sms_text}\"")
     
-    # --- STAGE 1: Fast Heuristic & ML Filter ---
+    # --- STAGE 1: Fast Heuristic & Statistical ML Filter ---
     evidence = extract_threat_evidence(sms_text)
     
     print("\n--- STAGE 1: DETECTOR EVIDENCE OUTPUT ---")
-    import json
     print(json.dumps(evidence, indent=2))
     
     # --- GATING LOGIC ---
     if evidence["is_scam"]:
-        print("\n[DECISION]: Threat detected (Risk Score >= 0.5). Triggering Stage 2 Reasoning...")
+        print("\n[DECISION]: Threat detected (Risk Score >= 0.40). Triggering Stage 2 Reasoning...")
         
         # Instantiate Stage 2 LLM Reasoning Engine
         reasoning_engine = Stage2ReasoningEngine()
         advice = reasoning_engine.generate_advice(sms_text, evidence)
         
-        print("\n--- STAGE 2: ACTIONABLE SAFETY ADVICE ---")
-        print(f">> {advice}\n")
+        print("\n--- STAGE 2: ACTIONABLE SAFETY ADVICE (STRUCTURED) ---")
+        if isinstance(advice, dict):
+            print(json.dumps(advice, indent=2))
+        else:
+            print(f">> {advice}\n")
     else:
         print("\n[DECISION]: Message is SAFE. LLM kept offline to preserve device battery.\n")
 

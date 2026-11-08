@@ -1,134 +1,144 @@
-import json
-import math
-import os
 import re
-from typing import List, Dict, Any
+import math
+import json
+from collections import Counter
 
-class SMSDetector:
-    def __init__(self, params_path: str = "model_params.json"):
-        # Resolve path relative to this script file
-        if not os.path.isabs(params_path):
-            base_dir = os.path.dirname(os.path.abspath(__file__))
-            params_path = os.path.join(base_dir, params_path)
-
+class SMSThreatDetector:
+    def __init__(self, params_path="model_params.json"):
         with open(params_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        self.classes = data["classes"]
-        self.class_log_prior = data["class_log_prior"]
-        self.feature_log_prob = data["feature_log_prob"]
-        self.vocabulary = data["vocabulary"]
-        self.idf = data["idf"]
-        self.stop_words = set(data.get("stop_words", []))
-        self.min_n, self.max_n = data.get("ngram_range", [1, 2])
+            params = json.load(f)
+            
+        self.vocab = params["vocabulary"]
+        self.idf = params["idf"]
+        self.feature_log_prob = params["feature_log_prob"]  # shape: [2, vocab_size]
+        self.class_log_prior = params["class_log_prior"]    # shape: [2]
+        self.classes = params.get("classes", [0, 1])
 
-    def _tokenize(self, text: str) -> List[str]:
-        words = re.findall(r"(?u)\b\w\w+\b", text.lower())
-        tokens = [w for w in words if w not in self.stop_words]
-        if self.max_n >= 2:
-            for i in range(len(words) - 1):
-                tokens.append(f"{words[i]} {words[i+1]}")
-        return tokens
+        # Domain knowledge regex patterns tailored for Indian threat vectors
+        self.url_pattern = re.compile(r'https?://[^\s]+|bit\.ly/[^\s]+|tinyurl\.com/[^\s]+', re.IGNORECASE)
+        self.apk_pattern = re.compile(r'\.apk\b|download\s+app', re.IGNORECASE)
+        self.utility_pattern = re.compile(r'(electricity|power|bill|disconnection|challan|traffic|fine)', re.IGNORECASE)
+        self.urgency_pattern = re.compile(r'(urgent|immediately|blocked|suspended|tonight|24\s*hours|penalty|deactivated)', re.IGNORECASE)
+        self.kyc_pattern = re.compile(r'(kyc|pan|aadhaar|account\s*blocked|update\s*details)', re.IGNORECASE)
+        self.lottery_pattern = re.compile(r'(lottery|won\b|winner|prize|crorepati|kbc|reward\s*points)', re.IGNORECASE)
+        self.advance_fee_pattern = re.compile(r'(processing\s*fee|registration\s*fee|claim\b|send\s*(?:rs\.?|inr|\d+)|to\s*upi|@upi\b)', re.IGNORECASE)
+        self.phone_pattern = re.compile(r'(?:\+91|0)?[6-9]\d{9}')
 
-    def predict_proba(self, text: str) -> float:
-        tokens = self._tokenize(text)
-        term_counts: Dict[int, int] = {}
-        for t in tokens:
-            if t in self.vocabulary:
-                idx = self.vocabulary[t]
-                term_counts[idx] = term_counts.get(idx, 0) + 1
+    @staticmethod
+    def calculate_entropy(text: str) -> float:
+        """Computes Shannon entropy to catch algorithmic/obfuscated URLs."""
+        if not text:
+            return 0.0
+        counts = Counter(text)
+        length = len(text)
+        return -sum((count / length) * math.log2(count / length) for count in counts.values())
 
-        if not term_counts:
-            exps = [math.exp(p) for p in self.class_log_prior]
-            return float(exps[1] / sum(exps))
+    def _normalize_text(self, text: str) -> str:
+        """Normalizes character obfuscation often used to evade keyword filters."""
+        text = text.lower()
+        # Collapse repeated delimiters used for evasion (e.g., s.b.i -> sbi)
+        text = re.sub(r'(\b[a-z])\.(?=[a-z]\b)', r'\1', text)
+        return text
 
-        tf_idf_vec = {}
-        squared_sum = 0.0
-        for idx, count in term_counts.items():
-            val = float(count) * self.idf[idx]
-            tf_idf_vec[idx] = val
-            squared_sum += val * val
+    def _predict_naive_bayes_proba(self, tokens) -> float:
+        """Pure-Python TF-IDF vectorization and MultinomialNB log-prob evaluation."""
+        tf = Counter(tokens)
+        doc_len = len(tokens)
+        if doc_len == 0:
+            return 0.0
 
-        norm = math.sqrt(squared_sum) if squared_sum > 0 else 1.0
-        for idx in tf_idf_vec:
-            tf_idf_vec[idx] /= norm
+        tfidf = {}
+        norm_sq = 0.0
+        for word, count in tf.items():
+            if word in self.vocab:
+                idx = self.vocab[word]
+                score = (count / doc_len) * self.idf[idx]
+                tfidf[idx] = score
+                norm_sq += score * score
 
-        log_probs = []
-        for c_idx in range(len(self.classes)):
-            lp = self.class_log_prior[c_idx]
-            for idx, tfidf_val in tf_idf_vec.items():
-                lp += tfidf_val * self.feature_log_prob[c_idx][idx]
-            log_probs.append(lp)
+        if norm_sq == 0.0:
+            return 0.0
 
-        max_lp = max(log_probs)
-        exps = [math.exp(lp - max_lp) for lp in log_probs]
-        sum_exps = sum(exps)
-        probs = [e / sum_exps for e in exps]
+        inv_norm = 1.0 / math.sqrt(norm_sq)
+        for idx in tfidf:
+            tfidf[idx] *= inv_norm
 
-        threat_idx = self.classes.index(1) if 1 in self.classes else 1
-        return float(probs[threat_idx])
+        log_probs = list(self.class_log_prior)
+        for c in range(2):
+            for idx, val in tfidf.items():
+                log_probs[c] += val * self.feature_log_prob[c][idx]
 
+        max_log = max(log_probs)
+        prob_safe = math.exp(log_probs[0] - max_log)
+        prob_scam = math.exp(log_probs[1] - max_log)
+        
+        return prob_scam / (prob_safe + prob_scam)
 
-# Initialize global detector instance
-_detector = None
+    def extract_evidence(self, text: str) -> dict:
+        normalized = self._normalize_text(text)
+        urls = self.url_pattern.findall(text)
+        
+        max_entropy = 0.0
+        for url in urls:
+            domain_part = url.split('/')[2] if len(url.split('/')) > 2 else url
+            entropy = self.calculate_entropy(domain_part)
+            if entropy > max_entropy:
+                max_entropy = round(entropy, 3)
 
-def get_detector() -> SMSDetector:
-    global _detector
-    if _detector is None:
-        _detector = SMSDetector()
-    return _detector
+        has_apk = bool(self.apk_pattern.search(normalized))
+        utility_threat = bool(self.utility_pattern.search(normalized))
+        urgency_markers = bool(self.urgency_pattern.search(normalized))
+        kyc_markers = bool(self.kyc_pattern.search(normalized))
+        lottery_markers = bool(self.lottery_pattern.search(normalized))
+        fee_claim_markers = bool(self.advance_fee_pattern.search(normalized))
+        suspicious_phone = bool(self.phone_pattern.search(normalized))
 
+        tokens = re.findall(r'\b\w+\b', normalized)
+        nb_scam_prob = self._predict_naive_bayes_proba(tokens)
 
-def extract_threat_evidence(text: str) -> Dict[str, Any]:
-    evidence = {
-        "urls": re.findall(r'https?://[^\s<>"]+|www\.[^\s<>"]+', text, flags=re.IGNORECASE),
-        "phones": re.findall(r'(?:\+?91[\-\s]?)?[6-9]\d{9}\b|\b\d{4,6}\b', text),
-        "urgency_triggers": [],
-        "financial_triggers": [],
-        "ml_probability": 0.0,
-        "threat_score": 0.0,
-        "is_scam": False
-    }
+        # Ensemble scoring: Statistical ML Prior (45%) + Edge Domain Heuristics
+        threat_score = nb_scam_prob * 0.45
 
-    urgency_keywords = [
-        "urgent", "immediately", "blocked", "suspended", "expire", "expires",
-        "penalty", "warning", "action required", "within 24 hours", "deactivated",
-        "disconnected", "tonight", "cutoff", "last date"
-    ]
-    financial_keywords = [
-        "sbi", "hdfc", "icici", "pan", "kyc", "otp", "debit", "credit", 
-        "account", "lottery", "cash", "reward", "refund", "tax", "bill",
-        "electricity", "power", "payment", "due"
-    ]
+        if len(urls) > 0:
+            threat_score += 0.25
+        if max_entropy > 3.8:
+            threat_score += 0.15
+        if has_apk:
+            threat_score += 0.35
+        if urgency_markers and (kyc_markers or utility_threat):
+            threat_score += 0.25
+        if suspicious_phone and (utility_threat or kyc_markers):
+            threat_score += 0.20
+        if lottery_markers and fee_claim_markers:
+            threat_score += 0.30
 
-    lower_text = text.lower()
-    evidence["urgency_triggers"] = [kw for kw in urgency_keywords if kw in lower_text]
-    evidence["financial_triggers"] = [kw for kw in financial_keywords if kw in lower_text]
+        threat_score = min(max(threat_score, 0.0), 1.0)
+        
+        # Decision boundary: >= 0.40 triggers Stage 2 LLM reasoning
+        is_scam = threat_score >= 0.40
 
-    # Run ML prediction on the extracted vocabulary
-    try:
-        clf = get_detector()
-        evidence["ml_probability"] = round(clf.predict_proba(text), 4)
-    except Exception:
-        evidence["ml_probability"] = 0.5  # Neutral fallback
+        return {
+            "threat_score": round(threat_score, 4),
+            "is_scam": is_scam,
+            "nb_prob": round(nb_scam_prob, 4),
+            "url_detected": len(urls) > 0,
+            "url_shannon_entropy": max_entropy,
+            "high_entropy_url": max_entropy > 3.8,
+            "apk_threat": has_apk,
+            "utility_threat": utility_threat,
+            "urgency_markers": urgency_markers,
+            "kyc_pan_markers": kyc_markers,
+            "lottery_markers": lottery_markers,
+            "fee_claim_markers": fee_claim_markers,
+            "suspicious_phone": suspicious_phone
+        }
 
-    # Heuristic scoring
-    heuristic_score = 0.0
-    if evidence["urls"]:
-        heuristic_score += 0.35
-    if evidence["phones"]:
-        heuristic_score += 0.20
-    heuristic_score += min(0.30, len(evidence["urgency_triggers"]) * 0.15)
-    heuristic_score += min(0.30, len(evidence["financial_triggers"]) * 0.15)
+# Global cached instance to avoid reloading params JSON on multiple calls
+_DETECTOR_INSTANCE = None
 
-    # Ensemble: 50% ML Model + 50% Heuristics
-    final_score = round(min(1.0, (evidence["ml_probability"] * 0.50) + (heuristic_score * 0.50)), 2)
-    evidence["threat_score"] = final_score
-
-    # Trigger threshold
-    evidence["is_scam"] = bool(
-        final_score >= 0.40 
-        or (evidence["urls"] and (evidence["urgency_triggers"] or evidence["financial_triggers"]))
-        or (evidence["phones"] and evidence["urgency_triggers"] and evidence["financial_triggers"])
-    )
-
-    return evidence
+def extract_threat_evidence(sms_text: str) -> dict:
+    """Entry point matching app.py expectations."""
+    global _DETECTOR_INSTANCE
+    if _DETECTOR_INSTANCE is None:
+        _DETECTOR_INSTANCE = SMSThreatDetector()
+    return _DETECTOR_INSTANCE.extract_evidence(sms_text)
