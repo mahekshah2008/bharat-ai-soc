@@ -1,16 +1,29 @@
-import os
-import sys
+﻿import os
+import re
 import json
-import subprocess
 import shutil
+import subprocess
+from typing import Dict, Any, List, Optional
 
 class Stage2ReasoningEngine:
-    def __init__(self, model_path=None):
+    """
+    Stage 2 Gated Edge Reasoning Engine (Llama 3.2 1B INT4 ExecuTorch + Deterministic Schema Guard)
+    Enforces a strict machine-readable JSON contract for downstream mobile OS integration.
+    """
+    REQUIRED_KEYS = {
+        "threat_category",
+        "threat_level",
+        "forensic_summary",
+        "actionable_guidance",
+        "reporting_helpline"
+    }
+
+    def __init__(self, model_path: Optional[str] = None):
         base_dir = os.path.dirname(os.path.abspath(__file__))
         self.model_path = model_path or os.path.join(base_dir, "llama3_2_1b_int4.pte")
         self.is_pte_available = os.path.exists(self.model_path)
         
-        # Check for compiled ExecuTorch binary on path or local directory
+        # Locate compiled ExecuTorch binary on system PATH or local workspace
         self.runner_bin = shutil.which("executor_runner") or shutil.which("./executor_runner")
         
         if self.is_pte_available:
@@ -22,109 +35,195 @@ class Stage2ReasoningEngine:
         else:
             print(f"[STAGE 2] '{os.path.basename(self.model_path)}' not found. Stage 2 in deterministic mode.")
 
-    def format_prompt(self, message: str, evidence: dict) -> str:
+    def _unpack_evidence(self, evidence: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Creates a constrained instruction prompt instructing Llama 3.2 1B
-        to return strictly parseable JSON adhering to our mobile defense schema.
+        Normalizes both current nested detector.py outputs and legacy flat dictionaries.
         """
-        threat_factors = []
-        if evidence.get("apk_threat"):
-            threat_factors.append("MALICIOUS_APK_DOWNLOAD")
-        if evidence.get("url_detected"):
-            threat_factors.append(f"EXTERNAL_URL(entropy={evidence.get('url_shannon_entropy', 0)})")
-        if evidence.get("utility_threat"):
-            threat_factors.append("UTILITY_BILL_DISCONNECTION")
-        if evidence.get("kyc_pan_markers"):
-            threat_factors.append("BANKING_KYC_VERIFICATION")
-        if evidence.get("suspicious_phone"):
-            threat_factors.append("UNOFFICIAL_10_DIGIT_SENDER")
+        factors = evidence.get("threat_factors", {})
+        urls = evidence.get("detected_urls", [])
+        entropy = evidence.get("shannon_entropy", evidence.get("url_shannon_entropy", 0.0))
+
+        return {
+            "threat_score": evidence.get("threat_score", evidence.get("scam_score", 0.0)),
+            "nb_prob": evidence.get("nb_prob", 0.0),
+            "heuristic_score": evidence.get("heuristic_score", 0.0),
+            "shannon_entropy": entropy,
+            "urls": urls,
+            "has_url": bool(urls) or bool(evidence.get("url_detected", False)),
+            "has_apk": bool(evidence.get("has_apk", evidence.get("apk_threat", False))),
+            "has_upi": bool(evidence.get("has_upi_handle", False)),
+            "kyc_pan": bool(factors.get("kyc_pan", evidence.get("kyc_pan_markers", False))),
+            "utility_cutoff": bool(factors.get("utility_cutoff", evidence.get("utility_threat", False))),
+            "traffic_challan": bool(factors.get("traffic_challan", False)),
+            "digital_arrest": bool(factors.get("digital_arrest", False)),
+            "financial_urgency": bool(factors.get("financial_urgency", False)),
+            "job_scam": bool(factors.get("job_scam", False)),
+            "vishing_call": bool(factors.get("vishing_call", evidence.get("suspicious_phone", False)))
+        }
+
+    def format_prompt(self, message: str, evidence: Dict[str, Any]) -> str:
+        """
+        Constructs a constrained Llama 3.2 instruction prompt grounded in Stage 1 forensic flags.
+        """
+        norm = self._unpack_evidence(evidence)
+        active_flags: List[str] = []
+
+        if norm["has_apk"]:
+            active_flags.append("MALICIOUS_APK_DROP")
+        if norm["digital_arrest"]:
+            active_flags.append("LAW_ENFORCEMENT_DIGITAL_ARREST_EXTORTION")
+        if norm["utility_cutoff"]:
+            active_flags.append("UTILITY_DISCONNECTION_URGENCY")
+        if norm["kyc_pan"]:
+            active_flags.append("KYC_SIM_BANK_SUSPENSION")
+        if norm["traffic_challan"]:
+            active_flags.append("FAKE_TRAFFIC_ECHALLAN")
+        if norm["job_scam"]:
+            active_flags.append("PART_TIME_TELEGRAM_JOB_LURE")
+        if norm["financial_urgency"]:
+            active_flags.append("LOTTERY_OR_LOAN_ADVANCE_FEE")
+        if norm["vishing_call"]:
+            active_flags.append("UNVERIFIED_CALL_CENTER_NUMBER")
+        if norm["has_url"]:
+            active_flags.append(f"SUSPICIOUS_URL(ShannonEntropy={norm['shannon_entropy']})")
+
+        flags_str = ", ".join(active_flags) if active_flags else "STATISTICAL_ANOMALY"
 
         prompt = (
             "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n"
-            "You are an on-device telecom security coprocessor. Analyze the SMS and detector flags. "
-            "Output ONLY a raw JSON object with keys: 'threat_category', 'threat_level' (CRITICAL/HIGH/MEDIUM), "
-            "'actionable_guidance' (max 2 concise sentences), and 'reporting_helpline'. Do not include markdown codeblocks.<|eot_id|>\n"
+            "You are an air-gapped on-device telecom security coprocessor. Analyze the SMS and Stage 1 telemetry. "
+            "Respond ONLY with a valid single-line JSON object containing keys: "
+            "'threat_category', 'threat_level' (CRITICAL/HIGH/MEDIUM), 'forensic_summary', "
+            "'actionable_guidance', and 'reporting_helpline'.<|eot_id|>\n"
             "<|start_header_id|>user<|end_header_id|>\n"
             f"SMS: \"{message}\"\n"
-            f"Stage 1 Threat Score: {evidence.get('threat_score', 0.0)}\n"
-            f"Evidence Vector: {', '.join(threat_factors) if threat_factors else 'SUSPICIOUS_CONTENT'}\n"
+            f"Stage 1 Ensemble Score: {norm['threat_score']} (NB={norm['nb_prob']}, Heuristic={norm['heuristic_score']})\n"
+            f"Triggered Indicators: {flags_str}\n"
             "<|start_header_id|>assistant<|end_header_id|>\n"
         )
         return prompt
 
-    def _infer_deterministic_response(self, message: str, evidence: dict) -> dict:
+    def _extract_and_validate_json(self, raw_text: str) -> Optional[Dict[str, Any]]:
         """
-        Zero-dependency, low-latency fallback delivering guaranteed JSON schema
-        aligned directly with empirical evidence from Stage 1.
+        Extracts the first JSON object from noisy LLM stdout and validates required schema keys.
         """
-        if evidence.get("apk_threat"):
+        match = re.search(r'\{.*\}', raw_text, re.DOTALL)
+        if not match:
+            return None
+        try:
+            parsed = json.loads(match.group(0))
+            if isinstance(parsed, dict) and self.REQUIRED_KEYS.issubset(parsed.keys()):
+                return parsed
+        except json.JSONDecodeError:
+            pass
+        return None
+
+    def _infer_deterministic_response(self, message: str, evidence: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Zero-dependency, sub-millisecond deterministic schema generator grounded in Stage 1 telemetry.
+        """
+        norm = self._unpack_evidence(evidence)
+        entropy_note = f" URL domain entropy measured at {norm['shannon_entropy']} bits." if norm["shannon_entropy"] > 0 else ""
+
+        if norm["has_apk"]:
             return {
-                "threat_category": "MALICIOUS_PAYLOAD_DROP",
+                "threat_category": "MALICIOUS_APK_DROPPER",
                 "threat_level": "CRITICAL",
-                "actionable_guidance": "Do not download or install any .apk file from this message. Never bypass Google Play Protect or Android unknown source warnings.",
+                "forensic_summary": f"Detected side-loading APK delivery vector (Score: {norm['threat_score']}).{entropy_note}",
+                "actionable_guidance": "Do not download or install any .apk file linked in this message. Side-loaded apps frequently contain SMS-stealing banking trojans.",
                 "reporting_helpline": "1930 / cybercrime.gov.in"
             }
-        elif evidence.get("utility_threat"):
+        elif norm["digital_arrest"]:
+            return {
+                "threat_category": "DIGITAL_ARREST_EXTORTION",
+                "threat_level": "CRITICAL",
+                "forensic_summary": f"Detected law enforcement/customs/TRAI impersonation markers (Score: {norm['threat_score']}).",
+                "actionable_guidance": "Indian law enforcement agencies (CBI, Police, Customs, TRAI) never conduct interrogations or demand money over video calls or SMS.",
+                "reporting_helpline": "1930 / Chakshu Portal (sancharsaathi.gov.in)"
+            }
+        elif norm["utility_cutoff"]:
             return {
                 "threat_category": "UTILITY_DISCONNECTION_FRAUD",
                 "threat_level": "HIGH",
-                "actionable_guidance": "Do not call the 10-digit number or pay through unauthorized links. Power distribution companies never issue immediate disconnection threats over unofficial numbers.",
-                "reporting_helpline": "1930 / State Electricity Customer Care"
+                "forensic_summary": f"Detected urgent power/electricity disconnection lure with unverified contact (Score: {norm['threat_score']}).",
+                "actionable_guidance": "Do not call the mobile number listed or install remote support apps. Verify bill status solely via your official state electricity portal.",
+                "reporting_helpline": "1930 / State Electricity Consumer Helpline"
             }
-        elif evidence.get("kyc_pan_markers"):
+        elif norm["kyc_pan"]:
             return {
-                "threat_category": "FINANCIAL_KYC_PHISHING",
+                "threat_category": "KYC_OR_SIM_SUSPENSION_PHISHING",
                 "threat_level": "CRITICAL",
-                "actionable_guidance": "Never enter banking passwords, PAN, or OTPs on unverified external links. Banks never request emergency account verification via SMS links.",
-                "reporting_helpline": "1930 / Official Bank Customer Support"
+                "forensic_summary": f"Detected banking/SIM KYC expiration coercion vector (Score: {norm['threat_score']}).{entropy_note}",
+                "actionable_guidance": "Never click SMS links claiming your bank account, PAN, or SIM card will be blocked. Telecom operators and banks do not verify KYC via external links.",
+                "reporting_helpline": "1930 / Official Bank or Telecom Customer Care"
             }
-        elif evidence.get("high_entropy_url") or evidence.get("url_detected"):
+        elif norm["traffic_challan"]:
             return {
-                "threat_category": "DECEPTIVE_URL_HARVESTING",
+                "threat_category": "FAKE_TRAFFIC_ECHALLAN_PHISHING",
                 "threat_level": "HIGH",
-                "actionable_guidance": "Do not click on shortened or high-entropy web domains. These domains are routinely used to harvest credentials or install tracking payloads.",
+                "forensic_summary": f"Detected spoofed Parivahan/RTO traffic violation notice (Score: {norm['threat_score']}).{entropy_note}",
+                "actionable_guidance": "Avoid clicking non-government links for traffic fines. Genuine e-Challan portals always use the official 'parivahan.gov.in' domain.",
+                "reporting_helpline": "1930 / cybercrime.gov.in"
+            }
+        elif norm["job_scam"]:
+            return {
+                "threat_category": "TASK_AND_INVESTMENT_JOB_FRAUD",
+                "threat_level": "HIGH",
+                "forensic_summary": f"Detected high-return part-time task/Telegram recruitment lure (Score: {norm['threat_score']}).{entropy_note}",
+                "actionable_guidance": "Do not join external Telegram/WhatsApp groups promising daily payouts for liking videos. These are advance-fee task traps.",
+                "reporting_helpline": "1930 / cybercrime.gov.in"
+            }
+        elif norm["financial_urgency"]:
+            return {
+                "threat_category": "ADVANCE_FEE_OR_LOAN_TRAP",
+                "threat_level": "HIGH",
+                "forensic_summary": f"Detected lottery/instant-loan financial lure or UPI fee request (Score: {norm['threat_score']}).{entropy_note}",
+                "actionable_guidance": "Never transfer processing fees via UPI or enter your UPI PIN to receive a reward or prize. Entering a UPI PIN always deducts money.",
+                "reporting_helpline": "1930 / National Cyber Crime Portal"
+            }
+        elif norm["shannon_entropy"] >= 3.75 or norm["has_url"]:
+            return {
+                "threat_category": "DECEPTIVE_DOMAIN_PHISHING",
+                "threat_level": "HIGH",
+                "forensic_summary": f"Detected suspicious external link.{entropy_note}",
+                "actionable_guidance": "Do not visit unfamiliar or shortened links sent via SMS. High-randomness domains are frequently generated by automated phishing kits.",
                 "reporting_helpline": "1930 / cybercrime.gov.in"
             }
         else:
             return {
-                "threat_category": "SOCIAL_ENGINEERING_SUSPECT",
+                "threat_category": "SUSPICIOUS_TELECOM_SOLICITATION",
                 "threat_level": "MEDIUM",
-                "actionable_guidance": "Exercise caution. Do not disclose personal or financial credentials, and verify sender authenticity directly through official channels.",
-                "reporting_helpline": "1930 / National Cyber Crime Portal"
+                "forensic_summary": f"Flagged by statistical token ensemble (Score: {norm['threat_score']}).",
+                "actionable_guidance": "Exercise caution and do not share OTPs, banking PINs, or personal identifiers with unverified senders.",
+                "reporting_helpline": "1930 / sancharsaathi.gov.in"
             }
 
-    def generate_advice(self, message: str, evidence: dict) -> dict:
+    def generate_advice(self, message: str, evidence: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Executes Stage 2 inference. If native executor_runner exists and .pte is present,
-        spawns runtime; otherwise executes deterministic schema generator.
+        Executes Stage 2 inference. Invokes native ExecuTorch binary when bound,
+        enforcing regex JSON extraction and deterministic schema fallback.
         """
         prompt = self.format_prompt(message, evidence)
 
         if self.is_pte_available and self.runner_bin:
             try:
                 cmd = [self.runner_bin, "--model_path", self.model_path, "--prompt", prompt]
-                proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=10)
-                raw_out = proc.stdout.strip()
-                # Clean markdown formatting if model wrapped response
-                if raw_out.startswith("```"):
-                    raw_out = raw_out.strip("`").replace("json", "").strip()
-                return json.loads(raw_out)
+                proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=8)
+                validated = self._extract_and_validate_json(proc.stdout)
+                if validated:
+                    return validated
             except Exception:
-                # Safe degradation to schema on binary or parse exception
-                return self._infer_deterministic_response(message, evidence)
-        else:
-            return self._infer_deterministic_response(message, evidence)
+                pass
+
+        return self._infer_deterministic_response(message, evidence)
+
 
 if __name__ == "__main__":
+    from detector import extract_threat_evidence
     engine = Stage2ReasoningEngine()
-    sample_evidence = {
-        "is_scam": True,
-        "threat_score": 0.4893,
-        "utility_threat": True,
-        "urgency_markers": True,
-        "suspicious_phone": True,
-        "url_detected": False
-    }
-    result = engine.generate_advice("Electricity power will be cut off tonight. Call 9876543210", sample_evidence)
-    print("\n--- STAGE 2 STRUCTURED OUTPUT ---")
+    
+    test_sms = "URGENT: SВI асcount blосked! Updаte PAN immediately at https://sbi-secure982a.xyz/kyc"
+    ev = extract_threat_evidence(test_sms)
+    result = engine.generate_advice(test_sms, ev)
+    print("\n--- STAGE 1 -> STAGE 2 INTEGRATED JSON CONTRACT ---")
     print(json.dumps(result, indent=2))
