@@ -98,11 +98,21 @@ Alert outputs conform to the mandatory 5-key security specification:
 
 ```
 bharat-ai-soc/
+├── app.py                # Web / API interface for pipeline interaction
 ├── benchmark.py          # Real-time physical ARM64 performance and RSS telemetry profiler
-├── config.json           # Model parameters, regex patterns, and gating thresholds
+├── bharat_soc_run.sh     # Automation launcher script for physical edge deployment
+├── detector.py           # Stage 1 lightweight heuristic & statistical feature extractor
+├── export_params.py      # Serialization utility to export trained weights to JSON
 ├── listener_daemon.py    # Background service for SMS spool and CLI stream processing
+├── llm_engine.py         # Stage 2 ExecuTorch / quantized local reasoning engine
+├── model_params.json     # Serialized lightweight model weights and decision thresholds
+├── requirements.txt      # Python dependencies for training and desktop runtime
+├── sms_classifier.joblib # Desktop scikit-learn training artifact
 ├── test_pipeline.py      # Unit testing suite covering adversarial attack vectors
+├── train_detector.py     # Base training pipeline for Stage 1 classifier
+├── train_full_dataset.py # Full dataset training with cross-validation
 └── README.md             # Architecture documentation and hardware benchmarks
+
 ```
 
 ---
