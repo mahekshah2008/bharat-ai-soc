@@ -55,14 +55,15 @@ Measured directly on native **ARM64 (Android aarch64)** mobile silicon using pro
 | **Overall Classification Accuracy** | **100.0%** (24 / 24 adversarial vectors) | Verified |
 | **Battery Gating Ratio** | **50.0%** bypassed heavy Stage 2 LLM | Energy Optimized |
 | **Stage 2 Schema Contract** | **100% compliance** across all invocations | Deterministic Schema |
-| **Process Working Set (VmRSS)** | **15.69 MB** (Delta: `+0.97 MB`) | Ultra-low Edge Footprint |
-| **Peak Dynamic Heap Allocation** | **1566.69 KB** (~1.5 MB runtime memory) | Safe for Low-RAM Targets |
+| **Process Working Set (VmRSS)** | **15.70 MB** (Delta: `+0.94 MB`) | Ultra-low Edge Footprint |
+| **Peak Dynamic Heap Allocation** | **1567.21 KB** (~1.5 MB runtime memory) | Safe for Low-RAM Targets |
 
-### Latency Profiles (Physical Silicon)
-| Pipeline Component | Mean Latency | Median (P50) | 90th Percentile (P90) | 99th Percentile (P99) |
-| :--- | :--- | :--- | :--- | :--- |
-| **Stage 1 (Feature Extraction + Gate)** | 1.122 ms | **0.496 ms** | 0.669 ms | 12.106 ms |
-| **End-to-End Pipeline (Stage 1 + 2)** | 1.160 ms | **0.561 ms** | 0.745 ms | 12.134 ms |
+### Latency Profiles: Pure Python vs. ARM NEON SIMD C-Extension (`-march=armv8-a+simd`)
+| Pipeline Component | Implementation | Mean Latency | Median (P50) | P90 Latency | P99 (Tail) Latency |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Stage 1 (Gate + Entropy)** | Pure Python Baseline | 1.122 ms | 0.496 ms | 0.669 ms | 12.106 ms |
+| **Stage 1 (Gate + Entropy)** | **ARM NEON SIMD (`.so`)** | **0.403 ms** | **0.414 ms** | **0.516 ms** | **0.684 ms (17.7x faster)** |
+| **End-to-End Pipeline** | **ARM NEON + Gated Stage 2** | **0.445 ms** | **0.481 ms** | **0.604 ms** | **0.701 ms** |
 
 ---
 
@@ -106,6 +107,7 @@ bharat-ai-soc/
 ├── listener_daemon.py    # Background service for SMS spool and CLI stream processing
 ├── llm_engine.py         # Stage 2 ExecuTorch / quantized local reasoning engine
 ├── model_params.json     # Serialized lightweight model weights and decision thresholds
+├── neon_kernel.c         # ARM NEON 128-bit SIMD C kernel for byte entropy & homoglyph detection
 ├── requirements.txt      # Python dependencies for training and desktop runtime
 ├── sms_classifier.joblib # Desktop scikit-learn training artifact
 ├── test_pipeline.py      # Unit testing suite covering adversarial attack vectors

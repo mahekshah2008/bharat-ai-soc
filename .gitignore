@@ -3,8 +3,11 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-# C extensions
+# C extensions & compiled shared libraries
 *.so
+*.dll
+*.dylib
+*.o
 
 # Distribution / packaging
 .Python
@@ -61,6 +64,8 @@ SMSSpamCollection
 
 # Heavy ML Models & Pre-trained Weights (Exclude large blobs)
 *.pte
+*.gguf
+*.tflite
 *.bin
 tokenizer.model
 *.safetensors
