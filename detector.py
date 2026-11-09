@@ -1,13 +1,34 @@
-﻿import json
+﻿import os
+import json
 import re
 import math
+import ctypes
 import unicodedata
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Tuple
+
+# Attempt to load compiled ARM NEON C kernel shared library if present
+_NEON_LIB = None
+_LIB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "libneon_kernel.so")
+if os.path.exists(_LIB_PATH):
+    try:
+        _lib = ctypes.CDLL(_LIB_PATH)
+        _lib.compute_entropy_and_homoglyphs.argtypes = [
+            ctypes.c_char_p,
+            ctypes.c_size_t,
+            ctypes.POINTER(ctypes.c_int)
+        ]
+        _lib.compute_entropy_and_homoglyphs.restype = ctypes.c_double
+        _lib.is_neon_enabled.argtypes = []
+        _lib.is_neon_enabled.restype = ctypes.c_int
+        _NEON_LIB = _lib
+    except Exception:
+        _NEON_LIB = None
+
 
 class BharatThreatDetector:
     """
     Stage 1 Zero-Dependency Threat & SMS Phishing Detector
-    Ensemble: Multinomial Naive Bayes + Heuristic Indicators + Shannon URL Entropy
+    Ensemble: Multinomial Naive Bayes + Heuristic Indicators + ARM NEON SIMD Entropy
     Target Architecture: Physical ARM64 / Edge SoC
     """
     def __init__(self, params_path: str = "model_params.json"):
@@ -21,6 +42,8 @@ class BharatThreatDetector:
         self.classes: List[str] = self.params["classes"]
         self.spam_index: int = self.classes.index("spam") if "spam" in self.classes else 1
 
+        self.neon_active: bool = bool(_NEON_LIB and _NEON_LIB.is_neon_enabled() == 1)
+
         # Cyrillic/Greek to Latin homoglyph mapping table
         self.homoglyph_map = str.maketrans({
             'а': 'a', 'е': 'e', 'о': 'o', 'р': 'p', 'с': 'c', 'у': 'y', 'х': 'x',
@@ -29,17 +52,43 @@ class BharatThreatDetector:
             'Р': 'P', 'С': 'C', 'Т': 'T', 'Х': 'X', 'Ү': 'Y'
         })
 
+        # Pre-compiled regex patterns for sub-millisecond edge execution
+        self.re_zwsp = re.compile(r'[\u200B-\u200D\uFEFF\u00A0]')
+        self.re_tokens = re.compile(r'\b\w\w+\b')
+        self.re_url = re.compile(r'(https?://[^\s]+|bit\.ly/[^\s]+|tinyurl\.com/[^\s]+|t\.me/[^\s]+|wa\.me/[^\s]+|[a-zA-Z0-9.-]+\.(?:top|xyz|club|online|site|live|apk|link|icu|vip)/[^\s]*)')
+        self.re_domain = re.compile(r'https?://([^/:]+)')
+        self.re_apk = re.compile(r'(\.apk\b|install.*app|download.*apk)')
+        self.re_tld = re.compile(r'\.(top|xyz|club|online|site|apk|cc|vip|icu|click)\b')
+        self.re_shortener = re.compile(r'(bit\.ly|tinyurl\.com|t\.me|wa\.me|cutt\.ly|rb\.gy)')
+        self.re_upi = re.compile(r'\b[a-zA-Z0-9.\-_]+@(upi|ybl|paytm|okaxis|oksbi|okhdfcbank|okicici|ibl|axl)\b')
+        self.re_kyc = re.compile(r'\b(kyc|pan|aadhaar|aadhar|sim|deactivated|deactivation|blocked|expire|suspend)\b')
+        self.re_utility = re.compile(r'\b(electricity|power|bill|disconnected|disconnection|light bill)\b')
+        self.re_challan = re.compile(r'\b(echallan|e-challan|parivahan|traffic fine|rto|court)\b')
+        self.re_arrest = re.compile(r'\b(cbi|customs|trai|arrest|narcotics|dcp|police)\b')
+        self.re_financial = re.compile(r'\b(lottery|winner|won|reward|cashback|credited|gift card|upi pin|instant credit|loan|0% interest|processing fee|crorepati|claim)\b')
+        self.re_job = re.compile(r'\b(part time|work from home|job offer|daily income|liking youtube|telegram channel|earn \d+)\b')
+        self.re_vishing = re.compile(r'\b(contact officer|call customer care|contact care|call officer|officer at \d+)\b')
+        self.re_urgency = re.compile(r'\b(immediately|immediate|urgent|urgently|tonight|within \d+ hours|24 hours|tonight at \d+)\b')
+
     def normalize_text(self, text: str) -> str:
         """Strip zero-width characters, normalize unicode forms, and resolve homoglyphs."""
-        text = re.sub(r'[\u200B-\u200D\uFEFF\u00A0]', '', text)
+        text = self.re_zwsp.sub('', text)
         text = unicodedata.normalize('NFKD', text)
         text = text.translate(self.homoglyph_map)
         return text
 
     def calculate_shannon_entropy(self, string: str) -> float:
-        """Calculate Shannon entropy to flag high-randomness DGA domains."""
+        """Calculate Shannon entropy using ARM NEON C kernel if loaded, else pure Python."""
         if not string:
             return 0.0
+        if _NEON_LIB is not None:
+            encoded = string.encode('utf-8')
+            homoglyphs = ctypes.c_int(0)
+            ent = _NEON_LIB.compute_entropy_and_homoglyphs(
+                encoded, len(encoded), ctypes.byref(homoglyphs)
+            )
+            return round(float(ent), 3)
+
         entropy = 0.0
         length = len(string)
         char_counts: Dict[str, int] = {}
@@ -50,35 +99,53 @@ class BharatThreatDetector:
             entropy -= p * math.log2(p)
         return round(entropy, 3)
 
-    def extract_heuristics(self, text: str) -> Dict[str, Any]:
+    def scan_non_ascii_neon(self, text: str) -> Tuple[float, int]:
+        """Run full-message byte entropy & non-ASCII homoglyph scan via ARM NEON SIMD."""
+        if not text:
+            return 0.0, 0
+        if _NEON_LIB is not None:
+            encoded = text.encode('utf-8')
+            homoglyphs = ctypes.c_int(0)
+            ent = _NEON_LIB.compute_entropy_and_homoglyphs(
+                encoded, len(encoded), ctypes.byref(homoglyphs)
+            )
+            return round(float(ent), 3), homoglyphs.value
+
+        non_ascii = sum(1 for c in text if ord(c) > 127)
+        return self.calculate_shannon_entropy(text), non_ascii
+
+    def extract_heuristics(self, text: str, clean_text: Optional[str] = None) -> Dict[str, Any]:
         """Inspect Indian telecom specific fraud vectors, links, UPI handles, and urgency indicators."""
-        clean_text = self.normalize_text(text)
+        if clean_text is None:
+            clean_text = self.normalize_text(text)
         lower_text = clean_text.lower()
 
-        url_pattern = r'(https?://[^\s]+|bit\.ly/[^\s]+|tinyurl\.com/[^\s]+|t\.me/[^\s]+|wa\.me/[^\s]+|[a-zA-Z0-9.-]+\.(?:top|xyz|club|online|site|live|apk|link|icu|vip)/[^\s]*)'
-        urls = re.findall(url_pattern, clean_text)
+        urls = self.re_url.findall(clean_text)
         
-        has_apk = bool(re.search(r'(\.apk\b|install.*app|download.*apk)', lower_text))
-        has_suspicious_tld = bool(re.search(r'\.(top|xyz|club|online|site|apk|cc|vip|icu|click)\b', lower_text))
-        has_shortener = bool(re.search(r'(bit\.ly|tinyurl\.com|t\.me|wa\.me|cutt\.ly|rb\.gy)', lower_text))
-        has_upi_handle = bool(re.search(r'\b[a-zA-Z0-9.\-_]+@(upi|ybl|paytm|okaxis|oksbi|okhdfcbank|okicici|ibl|axl)\b', lower_text))
+        has_apk = bool(self.re_apk.search(lower_text))
+        has_suspicious_tld = bool(self.re_tld.search(lower_text))
+        has_shortener = bool(self.re_shortener.search(lower_text))
+        has_upi_handle = bool(self.re_upi.search(lower_text))
         
+        _, non_ascii_bytes = self.scan_non_ascii_neon(text)
+        has_homoglyph_spoof = (non_ascii_bytes > 0) and (clean_text != text)
+
         max_entropy = 0.0
         for u in urls:
-            domain_match = re.search(r'https?://([^/:]+)', u)
+            domain_match = self.re_domain.search(u)
             domain = domain_match.group(1) if domain_match else u.split('/')[0]
             ent = self.calculate_shannon_entropy(domain)
             if ent > max_entropy:
                 max_entropy = ent
 
-        kyc_pan = bool(re.search(r'\b(kyc|pan|aadhaar|aadhar|sim|deactivated|deactivation|blocked|expire|suspend)\b', lower_text))
-        utility_cutoff = bool(re.search(r'\b(electricity|power|bill|disconnected|disconnection|light bill)\b', lower_text))
-        traffic_challan = bool(re.search(r'\b(echallan|e-challan|parivahan|traffic fine|rto|court)\b', lower_text))
-        digital_arrest = bool(re.search(r'\b(cbi|customs|trai|arrest|narcotics|dcp|police)\b', lower_text))
-        financial_urgency = bool(re.search(r'\b(lottery|winner|won|reward|cashback|credited|gift card|upi pin|instant credit|loan|0% interest|processing fee|crorepati|claim)\b', lower_text))
-        job_scam = bool(re.search(r'\b(part time|work from home|job offer|daily income|liking youtube|telegram channel|earn \d+)\b', lower_text))
-        vishing_call = bool(re.search(r'\b(contact officer|call customer care|contact care|call officer|officer at \d+)\b', lower_text))
-        urgency_terms = bool(re.search(r'\b(immediately|immediate|urgent|urgently|tonight|within \d+ hours|24 hours|tonight at \d+)\b', lower_text))
+        kyc_pan = bool(self.re_kyc.search(lower_text))
+        utility_cutoff = bool(self.re_utility.search(lower_text))
+        traffic_challan = bool(self.re_challan.search(lower_text))
+        digital_arrest = bool(self.re_arrest.search(lower_text))
+        financial_urgency = bool(self.re_financial.search(lower_text))
+        job_scam = bool(self.re_job.search(lower_text))
+        vishing_call = bool(self.re_vishing.search(lower_text))
+        urgency_terms = bool(self.re_urgency.search(lower_text))
 
         heuristic_score = 0.0
 
@@ -88,6 +155,8 @@ class BharatThreatDetector:
             heuristic_score += 0.35
         if max_entropy >= 3.75:
             heuristic_score += 0.20
+        if has_homoglyph_spoof:
+            heuristic_score += 0.25
 
         if utility_cutoff and (urgency_terms or vishing_call):
             heuristic_score += 0.50
@@ -109,6 +178,7 @@ class BharatThreatDetector:
             "max_entropy": max_entropy,
             "has_apk": has_apk,
             "has_upi_handle": has_upi_handle,
+            "neon_accelerated": self.neon_active,
             "threat_factors": {
                 "kyc_pan": kyc_pan,
                 "utility_cutoff": utility_cutoff,
@@ -124,7 +194,7 @@ class BharatThreatDetector:
     def predict_stage1(self, text: str) -> Dict[str, Any]:
         """Compute ensemble score using Naive Bayes log probabilities and heuristics."""
         normalized = self.normalize_text(text)
-        tokens = re.findall(r'\b\w\w+\b', normalized.lower())
+        tokens = self.re_tokens.findall(normalized.lower())
         
         tf_dict: Dict[int, int] = {}
         for token in tokens:
@@ -154,7 +224,7 @@ class BharatThreatDetector:
         diff = max(min(diff, 20.0), -20.0)
         nb_spam_prob = 1.0 / (1.0 + math.exp(-diff))
 
-        heuristics = self.extract_heuristics(text)
+        heuristics = self.extract_heuristics(text, clean_text=normalized)
         h_score = heuristics["heuristic_score"]
 
         combined_threat_score = round((0.50 * nb_spam_prob) + (0.50 * h_score), 4)
@@ -166,6 +236,9 @@ class BharatThreatDetector:
             "heuristic_score": h_score,
             "shannon_entropy": heuristics["max_entropy"],
             "detected_urls": heuristics["urls"],
+            "has_apk": heuristics["has_apk"],
+            "has_upi_handle": heuristics["has_upi_handle"],
+            "neon_accelerated": heuristics["neon_accelerated"],
             "is_threat": is_threat,
             "threat_factors": heuristics["threat_factors"]
         }
@@ -178,7 +251,6 @@ def extract_threat_evidence(text: str, detector: Optional[BharatThreatDetector] 
     if detector is None:
         detector = BharatThreatDetector()
     
-    heuristics = detector.extract_heuristics(text)
     prediction = detector.predict_stage1(text)
     
     return {
@@ -190,8 +262,9 @@ def extract_threat_evidence(text: str, detector: Optional[BharatThreatDetector] 
         "nb_prob": prediction["nb_prob"],
         "heuristic_score": prediction["heuristic_score"],
         "shannon_entropy": prediction["shannon_entropy"],
-        "detected_urls": heuristics["urls"],
-        "has_apk": heuristics["has_apk"],
-        "has_upi_handle": heuristics["has_upi_handle"],
-        "threat_factors": heuristics["threat_factors"]
+        "detected_urls": prediction["detected_urls"],
+        "has_apk": prediction["has_apk"],
+        "has_upi_handle": prediction["has_upi_handle"],
+        "neon_accelerated": prediction["neon_accelerated"],
+        "threat_factors": prediction["threat_factors"]
     }
