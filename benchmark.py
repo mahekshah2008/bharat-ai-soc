@@ -77,7 +77,7 @@ def main():
             t2 = time.perf_counter()
             
             # Verify 5-Key Contract Schema
-            required_keys = {"is_threat", "confidence", "threat_category", "recommended_action", "relevant_helpline"}
+            required_keys = {"threat_category", "threat_level", "forensic_summary", "actionable_guidance", "reporting_helpline"}
             if required_keys.issubset(llm_out.keys()):
                 schema_compliant_count += 1
             

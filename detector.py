@@ -55,20 +55,21 @@ class BharatThreatDetector:
         # Pre-compiled regex patterns for sub-millisecond edge execution
         self.re_zwsp = re.compile(r'[\u200B-\u200D\uFEFF\u00A0]')
         self.re_tokens = re.compile(r'\b\w\w+\b')
-        self.re_url = re.compile(r'(https?://[^\s]+|bit\.ly/[^\s]+|tinyurl\.com/[^\s]+|t\.me/[^\s]+|wa\.me/[^\s]+|[a-zA-Z0-9.-]+\.(?:top|xyz|club|online|site|live|apk|link|icu|vip)/[^\s]*)')
+        self.re_url = re.compile(r'(https?://[^\s]+|bit\.ly/[^\s]+|tinyurl\.com/[^\s]+|t\.me/[^\s]+|wa\.me/[^\s]+|[a-zA-Z0-9.-]+\.(?:top|xyz|club|online|site|live|apk|link|icu|vip|click)/[^\s]*)')
         self.re_domain = re.compile(r'https?://([^/:]+)')
         self.re_apk = re.compile(r'(\.apk\b|install.*app|download.*apk)')
         self.re_tld = re.compile(r'\.(top|xyz|club|online|site|apk|cc|vip|icu|click)\b')
         self.re_shortener = re.compile(r'(bit\.ly|tinyurl\.com|t\.me|wa\.me|cutt\.ly|rb\.gy)')
         self.re_upi = re.compile(r'\b[a-zA-Z0-9.\-_]+@(upi|ybl|paytm|okaxis|oksbi|okhdfcbank|okicici|ibl|axl)\b')
-        self.re_kyc = re.compile(r'\b(kyc|pan|aadhaar|aadhar|sim|deactivated|deactivation|blocked|expire|suspend)\b')
-        self.re_utility = re.compile(r'\b(electricity|power|bill|disconnected|disconnection|light bill)\b')
-        self.re_challan = re.compile(r'\b(echallan|e-challan|parivahan|traffic fine|rto|court)\b')
-        self.re_arrest = re.compile(r'\b(cbi|customs|trai|arrest|narcotics|dcp|police)\b')
-        self.re_financial = re.compile(r'\b(lottery|winner|won|reward|cashback|credited|gift card|upi pin|instant credit|loan|0% interest|processing fee|crorepati|claim)\b')
-        self.re_job = re.compile(r'\b(part time|work from home|job offer|daily income|liking youtube|telegram channel|earn \d+)\b')
-        self.re_vishing = re.compile(r'\b(contact officer|call customer care|contact care|call officer|officer at \d+)\b')
+        self.re_kyc = re.compile(r'\b(kyc|pan|aadhaar|aadhar|sim|deactivated|deactivation|blocked|suspend|suspended)\b')
+        self.re_utility = re.compile(r'\b(electricity|power|bill|disconnected|disconnection|light bill|cutoff)\b')
+        self.re_challan = re.compile(r'\b(echallan|e-challan|parivahan|traffic fine|rto|court|impound)\b')
+        self.re_arrest = re.compile(r'\b(cbi|customs|trai|arrest|narcotics|dcp|police|enforcement directorate|summons|seizure|hawala|fir)\b')
+        self.re_financial = re.compile(r'\b(lottery|winner|won|reward|cashback|gift card|upi pin|instant credit|loan|0% interest|processing fee|crorepati|claim|registration fee|customs duty|reward points)\b')
+        self.re_job = re.compile(r'\b(part time|work from home|job offer|daily income|liking youtube|telegram channel|typing captcha|daily payout|earn (?:rs\.?\s*)?\d+)\b')
+        self.re_vishing = re.compile(r'\b(contact officer|call customer care|contact care|call officer|officer at \d+|contact io|call \d{10}|staff \d{10}|manager \d{10}|inspector at \d+|engineer at \d+)\b')
         self.re_urgency = re.compile(r'\b(immediately|immediate|urgent|urgently|tonight|within \d+ hours|24 hours|tonight at \d+)\b')
+        self.re_benign_context = re.compile(r'\b(upi/cr/|avail bal|available limit|daily \d+gb data pack|myjio|airtel thanks|irctc|pnr|swiggy|zomato|flipkart|incometax\.gov\.in|mahadiscom\.in|karnataka\.gov\.in)\b')
 
     def normalize_text(self, text: str) -> str:
         """Strip zero-width characters, normalize unicode forms, and resolve homoglyphs."""
@@ -126,6 +127,7 @@ class BharatThreatDetector:
         has_suspicious_tld = bool(self.re_tld.search(lower_text))
         has_shortener = bool(self.re_shortener.search(lower_text))
         has_upi_handle = bool(self.re_upi.search(lower_text))
+        is_benign_whitelisted = bool(self.re_benign_context.search(lower_text)) and not (has_suspicious_tld or has_apk or has_shortener)
         
         _, non_ascii_bytes = self.scan_non_ascii_neon(text)
         has_homoglyph_spoof = (non_ascii_bytes > 0) and (clean_text != text)
@@ -160,24 +162,28 @@ class BharatThreatDetector:
 
         if utility_cutoff and (urgency_terms or vishing_call):
             heuristic_score += 0.50
-        elif kyc_pan and (urgency_terms or vishing_call):
+        elif kyc_pan and (urgency_terms or vishing_call or urls):
             heuristic_score += 0.50
-        elif job_scam and (has_shortener or urls):
-            heuristic_score += 0.50
+        elif job_scam and (has_shortener or urls or financial_urgency):
+            heuristic_score += 0.55
         elif financial_urgency and (has_apk or urls or has_shortener or has_upi_handle):
             heuristic_score += 0.55
         elif traffic_challan or digital_arrest:
-            heuristic_score += 0.45
+            heuristic_score += 0.55
         elif urgency_terms and vishing_call:
-            heuristic_score += 0.30
+            heuristic_score += 0.50
         elif financial_urgency:
             heuristic_score += 0.25
+
+        if is_benign_whitelisted:
+            heuristic_score = 0.0
 
         return {
             "urls": urls,
             "max_entropy": max_entropy,
             "has_apk": has_apk,
             "has_upi_handle": has_upi_handle,
+            "is_benign_whitelisted": is_benign_whitelisted,
             "neon_accelerated": self.neon_active,
             "threat_factors": {
                 "kyc_pan": kyc_pan,
@@ -227,8 +233,12 @@ class BharatThreatDetector:
         heuristics = self.extract_heuristics(text, clean_text=normalized)
         h_score = heuristics["heuristic_score"]
 
-        combined_threat_score = round((0.50 * nb_spam_prob) + (0.50 * h_score), 4)
-        is_threat = (combined_threat_score >= 0.38) or (h_score >= 0.50)
+        if heuristics["is_benign_whitelisted"]:
+            combined_threat_score = round(0.15 * nb_spam_prob, 4)
+            is_threat = False
+        else:
+            combined_threat_score = round((0.50 * nb_spam_prob) + (0.50 * h_score), 4)
+            is_threat = (combined_threat_score >= 0.38) or (h_score >= 0.50)
 
         return {
             "threat_score": combined_threat_score,
