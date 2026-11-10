@@ -73,7 +73,7 @@ def main():
         if pred["is_threat"]:
             stage2_invocations += 1
             evidence = extract_threat_evidence(text, detector)
-            llm_out = llm.generate_response(evidence)
+            llm_out = llm.generate_advice(text, evidence)
             t2 = time.perf_counter()
             
             # Verify 5-Key Contract Schema
