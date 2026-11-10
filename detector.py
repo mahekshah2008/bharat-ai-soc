@@ -63,13 +63,13 @@ class BharatThreatDetector:
         self.re_upi = re.compile(r'\b[a-zA-Z0-9.\-_]+@(upi|ybl|paytm|okaxis|oksbi|okhdfcbank|okicici|ibl|axl)\b')
         self.re_kyc = re.compile(r'\b(kyc|pan|aadhaar|aadhar|sim|deactivated|deactivation|blocked|suspend|suspended)\b')
         self.re_utility = re.compile(r'\b(electricity|power|bill|disconnected|disconnection|light bill|cutoff)\b')
-        self.re_challan = re.compile(r'\b(echallan|e-challan|parivahan|traffic fine|rto|court|impound)\b')
+        self.re_challan = re.compile(r'\b(echallan|e-challan|parivahan|traffic fine|court|impound|challan)\b')
         self.re_arrest = re.compile(r'\b(cbi|customs|trai|arrest|narcotics|dcp|police|enforcement directorate|summons|seizure|hawala|fir)\b')
-        self.re_financial = re.compile(r'\b(lottery|winner|won|reward|cashback|gift card|upi pin|instant credit|loan|0% interest|processing fee|crorepati|claim|registration fee|customs duty|reward points)\b')
+        self.re_financial = re.compile(r'\b(lottery|winner|won|reward|cashback|gift card|upi pin|instant credit|loan|0% interest|processing fee|crorepati|claim|registration fee|customs duty|reward points|lucky draw)\b')
         self.re_job = re.compile(r'\b(part time|work from home|job offer|daily income|liking youtube|telegram channel|typing captcha|daily payout|earn (?:rs\.?\s*)?\d+)\b')
         self.re_vishing = re.compile(r'\b(contact officer|call customer care|contact care|call officer|officer at \d+|contact io|call \d{10}|staff \d{10}|manager \d{10}|inspector at \d+|engineer at \d+)\b')
         self.re_urgency = re.compile(r'\b(immediately|immediate|urgent|urgently|tonight|within \d+ hours|24 hours|tonight at \d+)\b')
-        self.re_benign_context = re.compile(r'\b(upi/cr/|avail bal|available limit|daily \d+gb data pack|myjio|airtel thanks|irctc|pnr|swiggy|zomato|flipkart|incometax\.gov\.in|mahadiscom\.in|karnataka\.gov\.in)\b')
+        self.re_benign_context = re.compile(r'(upi/cr/|avail bal|available limit|daily \d+gb data pack|myjio|airtel thanks|irctc|pnr|swiggy|zomato|ekart|digilocker|incometax\.gov\.in|mahadiscom\.in|karnataka\.gov\.in)')
 
     def normalize_text(self, text: str) -> str:
         """Strip zero-width characters, normalize unicode forms, and resolve homoglyphs."""
@@ -127,7 +127,9 @@ class BharatThreatDetector:
         has_suspicious_tld = bool(self.re_tld.search(lower_text))
         has_shortener = bool(self.re_shortener.search(lower_text))
         has_upi_handle = bool(self.re_upi.search(lower_text))
-        is_benign_whitelisted = bool(self.re_benign_context.search(lower_text)) and not (has_suspicious_tld or has_apk or has_shortener)
+        is_benign_whitelisted = bool(self.re_benign_context.search(lower_text)) and not (
+            has_suspicious_tld or has_apk or has_shortener or has_upi_handle
+        )
         
         _, non_ascii_bytes = self.scan_non_ascii_neon(text)
         has_homoglyph_spoof = (non_ascii_bytes > 0) and (clean_text != text)
