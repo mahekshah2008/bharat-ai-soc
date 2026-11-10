@@ -1,9 +1,8 @@
 # BHARAT AI-SOC: Hardware-Software Co-Design for Ultra-Low-Latency On-Device Mobile SMS Threat Intelligence
 
-**Authors:** Mahek Shah  
+**Author:** Mahek Shah  
 **Institution:** First-Year B.Tech, Electronics and Telecommunication Engineering (ENTC)  
 **Target Architecture:** ARM64 (aarch64) Android Edge Devices / Termux Runtime  
-**Submission Deadline:** November 19, 2026  
 
 ---
 
