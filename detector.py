@@ -69,6 +69,12 @@ class BharatThreatDetector:
         self.re_job = re.compile(r'\b(part time|work from home|job offer|daily income|liking youtube|telegram channel|typing captcha|daily payout|earn (?:rs\.?\s*)?\d+)\b')
         self.re_vishing = re.compile(r'\b(contact officer|call customer care|contact care|call officer|officer at \d+|contact io|call \d{10}|staff \d{10}|manager \d{10}|inspector at \d+|engineer at \d+)\b')
         self.re_urgency = re.compile(r'\b(immediately|immediate|urgent|urgently|tonight|within \d+ hours|24 hours|tonight at \d+)\b')
+        self.re_prompt_injection = re.compile(
+            r'(ignore (?:all |previous |prior )?(?:instructions|rules|prompts)|'
+            r'<\|(?:begin_of_text|start_header_id|end_header_id|eot_id)\|>|'
+            r'\[/?system\]|system override|disregard previous|'
+            r'threat_level["\'\s:]+(?:low|safe|benign|none))'
+        )
         self.re_benign_context = re.compile(r'(upi/cr/|avail bal|available limit|daily \d+gb data pack|myjio|airtel thanks|irctc|pnr|swiggy|zomato|ekart|digilocker|incometax\.gov\.in|mahadiscom\.in|karnataka\.gov\.in)')
 
     def normalize_text(self, text: str) -> str:
@@ -127,8 +133,10 @@ class BharatThreatDetector:
         has_suspicious_tld = bool(self.re_tld.search(lower_text))
         has_shortener = bool(self.re_shortener.search(lower_text))
         has_upi_handle = bool(self.re_upi.search(lower_text))
+        prompt_injection = bool(self.re_prompt_injection.search(lower_text))
+
         is_benign_whitelisted = bool(self.re_benign_context.search(lower_text)) and not (
-            has_suspicious_tld or has_apk or has_shortener or has_upi_handle
+            has_suspicious_tld or has_apk or has_shortener or has_upi_handle or prompt_injection
         )
         
         _, non_ascii_bytes = self.scan_non_ascii_neon(text)
@@ -153,6 +161,8 @@ class BharatThreatDetector:
 
         heuristic_score = 0.0
 
+        if prompt_injection:
+            heuristic_score += 0.65
         if urls or has_shortener:
             heuristic_score += 0.25
         if has_suspicious_tld or has_apk:
@@ -194,7 +204,8 @@ class BharatThreatDetector:
                 "digital_arrest": digital_arrest,
                 "financial_urgency": financial_urgency,
                 "job_scam": job_scam,
-                "vishing_call": vishing_call
+                "vishing_call": vishing_call,
+                "prompt_injection": prompt_injection
             },
             "heuristic_score": min(round(heuristic_score, 4), 1.0)
         }
