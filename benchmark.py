@@ -7,7 +7,7 @@ import statistics
 from typing import List, Dict, Any
 
 from detector import BharatThreatDetector, extract_threat_evidence
-from llm_engine import BharatEdgeLLM
+from llm_engine import Stage2ReasoningEngine
 
 DATASET_FILE = "dataset_eval.json"
 
@@ -46,7 +46,7 @@ def main():
     print(f"Runtime Env  : Android aarch64 (3.14.10)")
     
     detector = BharatThreatDetector()
-    llm = BharatEdgeLLM()
+    llm = Stage2ReasoningEngine()
     print(f"ARM NEON SIMD: {'Active (128-bit hardware acceleration)' if detector.neon_active else 'Fallback'}")
     print()
 
