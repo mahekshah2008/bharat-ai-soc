@@ -1,75 +1,80 @@
-#include <stdint.h>
-#include <math.h>
 #include <string.h>
+#include <ctype.h>
+#include <math.h>
 
-#if defined(__ARM_NEON) || defined(__ARM_NEON__)
+#if defined(__ARM_NEON) || defined(__aarch64__)
 #include <arm_neon.h>
 #endif
 
-// Computes character-level Shannon entropy and counts non-ASCII (homoglyph) bytes
-// using ARM NEON 128-bit SIMD vector registers where available.
-double compute_entropy_and_homoglyphs(const uint8_t* data, size_t len, int* homoglyph_count) {
-    if (len == 0) {
-        *homoglyph_count = 0;
-        return 0.0;
-    }
+#ifdef _WIN32
+#define EXPORT __declspec(dllexport)
+#else
+#define EXPORT __attribute__((visibility("default")))
+#endif
 
-    uint32_t counts[256] = {0};
-    int non_ascii = 0;
+EXPORT float evaluate_sms_neon_simd(const char* sms_text) {
+    if (!sms_text) return 0.0f;
+    size_t len = strlen(sms_text);
+    if (len == 0) return 0.0f;
+
+    int non_ascii_count = 0;
+    int digit_count = 0;
+    int upper_count = 0;
+
     size_t i = 0;
-
-#if defined(__ARM_NEON) || defined(__ARM_NEON__)
-    // Process 16 bytes at a time using 128-bit NEON registers
+#if defined(__ARM_NEON) || defined(__aarch64__)
+    // 128-bit ARM NEON SIMD vectorized character inspection (16 bytes per cycle)
     uint8x16_t ascii_mask = vdupq_n_u8(0x80);
     for (; i + 16 <= len; i += 16) {
-        uint8x16_t chunk = vld1q_u8(data + i);
-        
-        // Bitwise AND with 0x80 to detect non-ASCII multibyte UTF-8 characters (e.g., Cyrillic spoofing)
+        uint8x16_t chunk = vld1q_u8((const uint8_t*)(sms_text + i));
         uint8x16_t high_bits = vandq_u8(chunk, ascii_mask);
-        uint8x16_t is_non_ascii = vcgtq_u8(high_bits, vdupq_n_u8(0));
-        
-        // Horizontal reduction to count flagged bytes in the 16-byte vector
-        uint8x16_t ones = vshrq_n_u8(is_non_ascii, 7);
-        non_ascii += vaddvq_u8(ones);
-
-        // Unrolled histogram update
-        uint8_t buf[16];
-        vst1q_u8(buf, chunk);
-        for (int j = 0; j < 16; ++j) {
-            counts[buf[j]]++;
+        uint8_t temp[16];
+        vst1q_u8(temp, high_bits);
+        for (int j = 0; j < 16; j++) {
+            if (temp[j] != 0) non_ascii_count++;
         }
     }
 #endif
 
-    // Handle remaining tail bytes (or full buffer on non-ARM fallback)
-    for (; i < len; ++i) {
-        uint8_t b = data[i];
-        if (b & 0x80) {
-            non_ascii++;
-        }
-        counts[b]++;
+    // Remainder / scalar pass for character profiling
+    for (; i < len; i++) {
+        unsigned char c = (unsigned char)sms_text[i];
+        if (c & 0x80) non_ascii_count++;
+        if (isdigit(c)) digit_count++;
+        if (isupper(c)) upper_count++;
     }
 
-    *homoglyph_count = non_ascii;
+    // Fast case-insensitive substring scan for high-risk telemetry markers
+    char lower_buf[1024];
+    size_t copy_len = len < 1023 ? len : 1023;
+    for (size_t k = 0; k < copy_len; k++) {
+        lower_buf[k] = (char)tolower((unsigned char)sms_text[k]);
+    }
+    lower_buf[copy_len] = '\0';
 
-    // Calculate Shannon Entropy: H(X) = -sum(P(x) * log2(P(x)))
-    double entropy = 0.0;
-    double inv_len = 1.0 / (double)len;
-    for (int k = 0; k < 256; ++k) {
-        if (counts[k] > 0) {
-            double p = (double)counts[k] * inv_len;
-            entropy -= p * log2(p);
-        }
+    float score = 0.08f;
+
+    // 1. Homoglyph / non-ASCII spoofing detection
+    if (non_ascii_count > 0) score += 0.35f;
+
+    // 2. Suspicious TLDs & phishing keywords
+    if (strstr(lower_buf, ".xyz") || strstr(lower_buf, ".cn") || 
+        strstr(lower_buf, "-kyc") || strstr(lower_buf, "http")) {
+        score += 0.38f;
     }
 
-    return entropy;
-}
+    // 3. Coercive urgency / extortion triggers
+    if (strstr(lower_buf, "urgent") || strstr(lower_buf, "suspended") || 
+        strstr(lower_buf, "arrest") || strstr(lower_buf, "cbi") || 
+        strstr(lower_buf, "blocked") || strstr(lower_buf, " disconnected")) {
+        score += 0.36f;
+    }
 
-// Helper to check if compiled with hardware NEON intrinsics active
-int is_neon_enabled(void) {
-#if defined(__ARM_NEON) || defined(__ARM_NEON__)
-    return 1;
-#else
-    return 0;
-#endif
+    // 4. Adversarial prompt injection markers
+    if (strstr(lower_buf, "<|eot_id|>") || strstr(lower_buf, "ignore previous")) {
+        score += 0.65f;
+    }
+
+    if (score > 0.99f) score = 0.99f;
+    return score;
 }
