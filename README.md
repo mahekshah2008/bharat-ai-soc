@@ -4,6 +4,7 @@
 [![Python](https://img.shields.io/badge/Python-3.11%20%7C%203.12-blue)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
 [![Status](https://img.shields.io/badge/Evaluation-Passed%20(100%25)-brightgreen)](https://github.com/mahekshah2008/bharat-ai-soc)
+[![Edge CI & C-SIMD Verification](https://github.com/mahekshah2008/bharat-ai-soc/actions/workflows/ci.yml/badge.svg)](https://github.com/mahekshah2008/bharat-ai-soc/actions/workflows/ci.yml)
 
 An ultra-low latency, energy-preserving dual-stage threat detection daemon designed for on-device mobile hardware (ARM Cortex-A series). Engineered specifically for **Problem Statement 3: On-Device Threat & Scam Detection** in the **ARM Bharat AI-SoC Challenge 2026–2027**.
 
