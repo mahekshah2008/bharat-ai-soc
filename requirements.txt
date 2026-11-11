@@ -1,16 +1,20 @@
-# -------------------------------------------------------------------------
-# Bharat AI-SoC Dependency Specification
-# 
-# NOTE: ON-DEVICE INFERENCE (ARM64 / Termux) REQUIRES ZERO DEPENDENCIES!
-# Pure Python standard library is used along with 'model_params.json'.
+# =========================================================================
+# BHARAT AI-SOC (v3.0) — Dependency Specification
 #
-# The packages below are ONLY needed on the host PC if you plan to retrain
-# the model from raw CSV data or re-export 'model_params.json'.
-# -------------------------------------------------------------------------
+# NOTE: Stage 1 Native Standalone Executables (`bharat-ai-soc-arm64`, 
+# `bharat-ai-soc.exe`) and the C-SIMD Fuzzer (`fuzzer.py`) require ZERO 
+# external Python libraries (100% C-FFI + Python Standard Library).
+#
+# The packages below are used for the Interactive Live Judge Telemetry
+# Suite (`demo.py`), RSS memory profiling, and CI/CD test automation.
+# =========================================================================
 
-# Host Offline Training & Parameter Export Only
-scikit-learn>=1.4.0
-pandas>=2.0.0
-joblib>=1.3.0
-rich>=13.0.0
+# Live Judge Telemetry UI & Process Memory Profiling (demo.py)
+rich>=13.7.0
+psutil>=5.9.0; platform_system != "Android"
+
+# Automated CI/CD Verification & Unit Testing
+pytest>=8.0.0
+
+# Optional: Offline Threat Signature Expansion & Synthetic Red-Teaming
 google-genai>=1.0.0
