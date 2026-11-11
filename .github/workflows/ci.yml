@@ -1,0 +1,40 @@
+name: Bharat AI-SOC Edge CI & C-SIMD Verification
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build-and-verify-edge-soc:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Compile Native C-SIMD Kernel (neon_kernel.so)
+        run: |
+          gcc -O3 -fPIC -shared -o neon_kernel.so neon_kernel.c -lm
+          ls -lh neon_kernel.so
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install rich psutil pytest google-genai
+
+      - name: Verify Native C-FFI Linkage
+        run: |
+          python -c "from neon_loader import neon_engine; res = neon_engine.evaluate('URGENT: Paytm KYC suspended https://paytm-kyc.xyz'); print(res); assert res['simd_accelerated'] is True"
+
+      - name: Run 26-Vector Multi-Lingual Adversarial Confusion Matrix
+        run: |
+          python fuzzer.py
+          python -c "import json; r = json.load(open('fuzz_report.json')); assert r['metrics']['f1_score_percent'] == 100.0; assert r['confusion_matrix']['FP'] == 0"

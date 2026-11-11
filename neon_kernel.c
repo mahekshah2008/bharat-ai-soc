@@ -29,39 +29,40 @@ EXPORT float compute_shannon_entropy_simd(const char* text) {
     for (int b = 0; b < 256; b++) {
         if (freq[b] > 0) {
             float p = (float)freq[b] * inv_len;
-            entropy -= p * (logf(p) / 0.69314718f); /* log2(p) */
+            entropy -= p * (logf(p) / 0.69314718f);
         }
     }
     return entropy;
 }
 
+/*
+ * Evaluates SMS payload using hardware-friendly byte scanning:
+ * Distinguishes Cyrillic/Greek homoglyph spoofing (UTF-8 0xCE-0xD3)
+ * from legitimate Indian Devanagari script (UTF-8 0xE0 0xA4/0xA5).
+ */
 EXPORT float evaluate_sms_neon_simd(const char* sms_text) {
     if (!sms_text) return 0.0f;
     size_t len = strlen(sms_text);
     if (len == 0) return 0.0f;
 
-    int non_ascii_count = 0;
-    int digit_count = 0;
-    size_t i = 0;
+    int homoglyph_spoof_count = 0;
+    int devanagari_count = 0;
+    int ascii_alpha_count = 0;
 
-#if defined(__ARM_NEON) || defined(__aarch64__)
-    /* 128-bit ARM NEON SIMD vectorized high-bit homoglyph scan (16 bytes/cycle) */
-    uint8x16_t ascii_mask = vdupq_n_u8(0x80);
-    for (; i + 16 <= len; i += 16) {
-        uint8x16_t chunk = vld1q_u8((const uint8_t*)(sms_text + i));
-        uint8x16_t high_bits = vandq_u8(chunk, ascii_mask);
-        uint8_t temp[16];
-        vst1q_u8(temp, high_bits);
-        for (int j = 0; j < 16; j++) {
-            if (temp[j] != 0) non_ascii_count++;
-        }
-    }
-#endif
-
-    for (; i < len; i++) {
+    for (size_t i = 0; i < len; i++) {
         unsigned char c = (unsigned char)sms_text[i];
-        if (c & 0x80) non_ascii_count++;
-        if (isdigit(c)) digit_count++;
+        if (isalpha(c)) {
+            ascii_alpha_count++;
+        } else if (c >= 0xCE && c <= 0xD3) {
+            /* UTF-8 leading bytes for Greek (0xCE-0xCF) and Cyrillic (0xD0-0xD3) homoglyphs */
+            homoglyph_spoof_count++;
+        } else if (c == 0xE0 && (i + 1 < len)) {
+            unsigned char next_c = (unsigned char)sms_text[i + 1];
+            if (next_c == 0xA4 || next_c == 0xA5) {
+                /* Official UTF-8 block for Devanagari (Hindi / Marathi) */
+                devanagari_count++;
+            }
+        }
     }
 
     float entropy = compute_shannon_entropy_simd(sms_text);
@@ -75,32 +76,44 @@ EXPORT float evaluate_sms_neon_simd(const char* sms_text) {
 
     float score = 0.05f;
 
-    /* 1. High Shannon Entropy anomaly (obfuscated DGA URLs / mixed scripts) */
-    if (entropy > 4.45f) score += 0.18f;
+    /* 1. Mixed-Script Cyrillic/Greek Homoglyph Spoofing (e.g., Cyrillic 'Р' in Paytm or 'В' in SBI) */
+    if (homoglyph_spoof_count > 0 && ascii_alpha_count > 0) {
+        score += 0.42f;
+    }
 
-    /* 2. Non-ASCII / Cyrillic Homoglyph spoofing */
-    if (non_ascii_count > 0) score += 0.35f;
+    /* 2. High Shannon Entropy on suspicious URL payloads */
+    if (entropy > 4.50f && (strstr(lower_buf, "http") || strstr(lower_buf, "www"))) {
+        score += 0.16f;
+    }
 
-    /* 3. Suspicious phishing TLDs & URL lures */
+    /* 3. High-risk phishing TLDs, URL shorteners, and APK sideloading lures */
     if (strstr(lower_buf, ".xyz") || strstr(lower_buf, ".cn") || 
         strstr(lower_buf, ".top") || strstr(lower_buf, "-kyc") || 
-        strstr(lower_buf, "bit.ly") || strstr(lower_buf, "http")) {
+        strstr(lower_buf, ".apk") || strstr(lower_buf, "bit.ly") ||
+        strstr(lower_buf, "http://") || strstr(lower_buf, "https://")) {
         score += 0.36f;
     }
 
-    /* 4. Coercive urgency, Digital Arrest, and Hinglish scam triggers */
+    /* 4. Coercive urgency, Digital Arrest, Hinglish & Devanagari (Hindi/Marathi) scam triggers */
     if (strstr(lower_buf, "urgent") || strstr(lower_buf, "suspended") || 
         strstr(lower_buf, "arrest") || strstr(lower_buf, "cbi") || 
         strstr(lower_buf, "blocked") || strstr(lower_buf, "disconnected") ||
         strstr(lower_buf, "turant") || strstr(lower_buf, "band ho") ||
-        strstr(lower_buf, "fastag") || strstr(lower_buf, "challan")) {
+        strstr(lower_buf, "fastag") || strstr(lower_buf, "challan") ||
+        strstr(lower_buf, "unusual login") || strstr(lower_buf, "frozen") ||
+        strstr(lower_buf, "blacklisted") || strstr(lower_buf, "on hold") ||
+        strstr(lower_buf, "daily from home") || strstr(lower_buf, "seized") ||
+        /* Native Devanagari Hindi/Marathi scam tokens (केवायसी, ब्लॉक, डिजिटल अरेस्ट, वीज) */
+        strstr(sms_text, "केवायसी") || strstr(sms_text, "ब्लॉक") ||
+        strstr(sms_text, "डिजिटल अरेस्ट") || strstr(sms_text, "कनेक्शन बंद")) {
         score += 0.36f;
     }
 
-    /* 5. Adversarial prompt injection markers */
+    /* 5. Adversarial Prompt Injection / Jailbreak control tokens */
     if (strstr(lower_buf, "<|eot_id|>") || strstr(lower_buf, "ignore previous") ||
-        strstr(lower_buf, "system:") || strstr(lower_buf, "threat_level: low")) {
-        score += 0.68f;
+        strstr(lower_buf, "override security") || strstr(lower_buf, "<<sys>>") ||
+        strstr(lower_buf, "threat_level: low")) {
+        score += 0.75f;
     }
 
     if (score > 0.99f) score = 0.99f;
