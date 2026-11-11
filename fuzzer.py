@@ -1,10 +1,6 @@
-import os
 import json
 import time
-import warnings
 from typing import List, Dict
-
-warnings.filterwarnings("ignore", category=FutureWarning)
 
 from neon_loader import neon_engine
 from detector import BharatThreatDetector, extract_threat_evidence
@@ -36,7 +32,7 @@ def get_adversarial_redteam_battery() -> List[Dict[str, str]]:
     ]
 
 def get_benign_control_battery() -> List[Dict[str, str]]:
-    """10-vector legitimate Indian SMS suite (including Marathi/Hindi) to verify 0% False Positive Rate."""
+    """6-vector legitimate Indian SMS suite (including Marathi/Hindi) to verify 0% False Positive Rate."""
     return [
         {"category": "BENIGN_UPI_BANK", "text": "Dear UPI user A/C X4921 debited by Rs 180.00 on date 11Nov26 trf to Zomato Limited Refno 631519283112. Not u? Call 1800111109."},
         {"category": "BENIGN_IRCTC", "text": "PNR:8419201842, TRAIN:12128 INTERCITY EXP, DOJ:15-11-2026, CSMT to PUNE, CNF/C2/44. Wish you a happy journey -IRCTC"},
@@ -60,13 +56,9 @@ def run_adversarial_fuzzer():
     print(f"[FUZZER] Testing {len(malicious_payloads)} Adversarial Threats + {len(benign_payloads)} Benign Controls (incl. Marathi/Hindi Devanagari)...\n")
 
     results = []
-    tp = 0  # True Positives (Threats correctly blocked)
-    fn = 0  # False Negatives (Threats missed)
-    tn = 0  # True Negatives (Benign correctly passed)
-    fp = 0  # False Positives (Benign falsely blocked)
+    tp = fn = tn = fp = 0
     total_latency = 0.0
 
-    # 1. Evaluate Adversarial Threats
     for idx, item in enumerate(malicious_payloads, 1):
         sms = item["text"]
         cat = item["category"]
@@ -74,7 +66,7 @@ def run_adversarial_fuzzer():
         t_start = time.perf_counter()
         c_eval = neon_engine.evaluate(sms)
         ev = extract_threat_evidence(sms, detector=detector)
-        advice = stage2.generate_advice(sms, ev)
+        stage2.generate_advice(sms, ev)
         t_elapsed = (time.perf_counter() - t_start) * 1000
         total_latency += t_elapsed
 
@@ -101,7 +93,6 @@ def run_adversarial_fuzzer():
 
     print("-" * 74)
 
-    # 2. Evaluate Benign Controls (False Positive Check)
     for b_idx, item in enumerate(benign_payloads, len(malicious_payloads) + 1):
         sms = item["text"]
         cat = item["category"]
