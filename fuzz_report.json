@@ -4,7 +4,7 @@
   "total_payloads": 15,
   "successfully_detected": 15,
   "robustness_score_percent": 100.0,
-  "mean_fuzz_latency_ms": 0.186,
+  "mean_fuzz_latency_ms": 0.241,
   "test_results": [
     {
       "id": 1,
@@ -14,7 +14,7 @@
       "pipeline_score": 0.8196,
       "simd_accelerated": true,
       "status": "BLOCKED [\u2713]",
-      "latency_ms": 1.257
+      "latency_ms": 1.205
     },
     {
       "id": 2,
@@ -24,7 +24,7 @@
       "pipeline_score": 0.7394,
       "simd_accelerated": true,
       "status": "BLOCKED [\u2713]",
-      "latency_ms": 0.124
+      "latency_ms": 0.69
     },
     {
       "id": 3,
@@ -34,7 +34,7 @@
       "pipeline_score": 0.6482,
       "simd_accelerated": true,
       "status": "BLOCKED [\u2713]",
-      "latency_ms": 0.102
+      "latency_ms": 0.224
     },
     {
       "id": 4,
@@ -44,7 +44,7 @@
       "pipeline_score": 0.3902,
       "simd_accelerated": true,
       "status": "BLOCKED [\u2713]",
-      "latency_ms": 0.092
+      "latency_ms": 0.167
     },
     {
       "id": 5,
@@ -54,7 +54,7 @@
       "pipeline_score": 0.4313,
       "simd_accelerated": true,
       "status": "BLOCKED [\u2713]",
-      "latency_ms": 0.091
+      "latency_ms": 0.127
     },
     {
       "id": 6,
@@ -64,7 +64,7 @@
       "pipeline_score": 0.5238,
       "simd_accelerated": true,
       "status": "BLOCKED [\u2713]",
-      "latency_ms": 0.092
+      "latency_ms": 0.115
     },
     {
       "id": 7,
@@ -74,7 +74,7 @@
       "pipeline_score": 0.7771,
       "simd_accelerated": true,
       "status": "BLOCKED [\u2713]",
-      "latency_ms": 0.252
+      "latency_ms": 0.116
     },
     {
       "id": 8,
@@ -84,7 +84,7 @@
       "pipeline_score": 0.744,
       "simd_accelerated": true,
       "status": "BLOCKED [\u2713]",
-      "latency_ms": 0.12
+      "latency_ms": 0.11
     },
     {
       "id": 9,
@@ -94,7 +94,7 @@
       "pipeline_score": 0.7061,
       "simd_accelerated": true,
       "status": "BLOCKED [\u2713]",
-      "latency_ms": 0.085
+      "latency_ms": 0.101
     },
     {
       "id": 10,
@@ -104,7 +104,7 @@
       "pipeline_score": 0.4489,
       "simd_accelerated": true,
       "status": "BLOCKED [\u2713]",
-      "latency_ms": 0.148
+      "latency_ms": 0.14
     },
     {
       "id": 11,
@@ -114,7 +114,7 @@
       "pipeline_score": 0.628,
       "simd_accelerated": true,
       "status": "BLOCKED [\u2713]",
-      "latency_ms": 0.098
+      "latency_ms": 0.135
     },
     {
       "id": 12,
@@ -124,7 +124,7 @@
       "pipeline_score": 0.6748,
       "simd_accelerated": true,
       "status": "BLOCKED [\u2713]",
-      "latency_ms": 0.079
+      "latency_ms": 0.135
     },
     {
       "id": 13,
@@ -134,7 +134,7 @@
       "pipeline_score": 0.6501,
       "simd_accelerated": true,
       "status": "BLOCKED [\u2713]",
-      "latency_ms": 0.072
+      "latency_ms": 0.107
     },
     {
       "id": 14,
@@ -144,17 +144,17 @@
       "pipeline_score": 0.4366,
       "simd_accelerated": true,
       "status": "BLOCKED [\u2713]",
-      "latency_ms": 0.089
+      "latency_ms": 0.135
     },
     {
       "id": 15,
       "category": "TASK_JOB_SCAM",
-      "text": " Urgent Hiring: Earn Rs 5,000 daily from home by rating Google Maps hotels! Instant UPI payout. Join Telegram HR now: https://t-me-jobs.xyz",
+      "text": "Urgent Hiring: Earn Rs 5,000 daily from home by rating Google Maps hotels! Instant UPI payout. Join Telegram HR now: https://t-me-jobs.xyz",
       "native_c_score": 0.95,
       "pipeline_score": 0.5878,
       "simd_accelerated": true,
       "status": "BLOCKED [\u2713]",
-      "latency_ms": 0.089
+      "latency_ms": 0.114
     }
   ]
 }
