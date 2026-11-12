@@ -1,0 +1,28 @@
+{
+  "runtime_env": "Windows AMD64 (Python 3.11.9)",
+  "dataset_size": 100,
+  "confusion_matrix": {
+    "TP": 50,
+    "TN": 50,
+    "FP": 0,
+    "FN": 0
+  },
+  "accuracy_percent": 100.0,
+  "precision_percent": 100.0,
+  "recall_percent": 100.0,
+  "f1_score_percent": 100.0,
+  "fpr_percent": 0.0,
+  "c_simd_latency_ms": {
+    "mean": 0.042,
+    "p50": 0.0439,
+    "p99": 0.1145
+  },
+  "stage1_latency_ms": {
+    "mean": 0.572,
+    "p50": 0.509,
+    "p90": 0.94,
+    "p99": 1.695
+  },
+  "rss_memory_mb": 23.94,
+  "peak_heap_kb": 2404.09
+}
