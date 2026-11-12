@@ -29,21 +29,26 @@ jobs:
 
       - name: Compile Standalone Executables (ARM64 aarch64 & Linux x86_64)
         run: |
-          # 1. Standalone ARM64 Linux/Android Executable (with Hardware ARM NEON SIMD)
+          # 1. Stage 1 Standalone ARM64 Linux/Android Executable (with Hardware ARM NEON SIMD)
           aarch64-linux-gnu-gcc -O3 -march=armv8-a+simd -static -o bharat-ai-soc-linux-arm64 bharat_soc_app.c neon_kernel.c -lm
           aarch64-linux-gnu-gcc -O3 -fPIC -shared -march=armv8-a+simd -o neon_kernel_arm64.so neon_kernel.c -lm
 
-          # 2. Standalone x86_64 Linux Executable
+          # 2. Stage 1 Standalone x86_64 Linux Executable
           gcc -O3 -fPIC -shared -o neon_kernel.so neon_kernel.c -lm
           gcc -O3 -o bharat-ai-soc-linux-x86_64 bharat_soc_app.c neon_kernel.c -lm
 
-          chmod +x bharat-ai-soc-linux-arm64 bharat-ai-soc-linux-x86_64
-          ls -lh bharat-ai-soc-linux-arm64 neon_kernel_arm64.so bharat-ai-soc-linux-x86_64 neon_kernel.so
+          # 3. Stage 2 Native ExecuTorch INT4 Co-Processor Runner (ARM64 & x86_64)
+          aarch64-linux-gnu-gcc -O3 -static -o executor_runner_arm64 executor_runner.c
+          gcc -O3 -o executor_runner executor_runner.c
 
-      - name: Run 26-Vector Confusion Matrix Verification
+          chmod +x bharat-ai-soc-linux-arm64 bharat-ai-soc-linux-x86_64 executor_runner_arm64 executor_runner
+          ls -lh bharat-ai-soc-linux-arm64 neon_kernel_arm64.so bharat-ai-soc-linux-x86_64 neon_kernel.so executor_runner_arm64 executor_runner
+
+      - name: Run 26-Vector Confusion Matrix & Stage 2 Verification
         run: |
           pip install rich psutil pytest
           python fuzzer.py < /dev/null
+          python llm_engine.py
           python -c "import json; r = json.load(open('fuzz_report.json')); assert r['metrics']['f1_score_percent'] == 100.0; assert r['confusion_matrix']['FP'] == 0"
 
       - name: Upload Compiled Binaries as Action Artifacts
@@ -56,6 +61,8 @@ jobs:
             neon_kernel_arm64.so
             bharat-ai-soc-linux-x86_64
             neon_kernel.so
+            executor_runner_arm64
+            executor_runner
             bin/*
 
       - name: Create or Update GitHub Release v3.0.0 (Deliverable #2)
@@ -64,5 +71,5 @@ jobs:
         run: |
           git tag -f v3.0.0
           git push origin v3.0.0 --force
-          gh release view v3.0.0 >/dev/null 2>&1 || gh release create v3.0.0 --title "Bharat AI-SOC v3.0.0 — Compiled ARM64 & Linux Edge Executables" --notes "Official pre-compiled standalone ARM64 (aarch64 NEON SIMD) and Linux x86_64 executables for Deliverable #2."
-          gh release upload v3.0.0 bharat-ai-soc-linux-arm64 neon_kernel_arm64.so bharat-ai-soc-linux-x86_64 neon_kernel.so --clobber
+          gh release view v3.0.0 >/dev/null 2>&1 || gh release create v3.0.0 --title "Bharat AI-SOC v3.0.0 — Compiled ARM64 & Linux Edge Executables" --notes "Official pre-compiled standalone ARM64 (aarch64 NEON SIMD) and Linux x86_64 executables for Deliverable #2 (Stage 1 C-SIMD Kernel + Stage 2 Native INT4 Runner)."
+          gh release upload v3.0.0 bharat-ai-soc-linux-arm64 neon_kernel_arm64.so bharat-ai-soc-linux-x86_64 neon_kernel.so executor_runner_arm64 executor_runner --clobber
