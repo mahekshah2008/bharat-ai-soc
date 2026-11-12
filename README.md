@@ -30,7 +30,7 @@ Running a 1-billion-parameter LLM on every incoming SMS drains mobile batteries 
    * **Energy-Preserving Gate:** Legitimate transactional traffic (UPI debits, IRCTC PNR alerts, OTPs, conversational SMS) is cleared in **< 1.0 ms**, keeping Stage 2 in deep sleep (`0.0 mW` LLM wakeup).
 
 2. **Stage 2: Gated INT4 Quantized ExecuTorch Co-Processor (`executor_runner.c` & `llm_engine.py`)**
-   * Woken **exclusively** when Stage 1 flags a statistical or structural anomaly (`threat_score >= 0.45`).
+   * Woken **exclusively** when Stage 1 flags a statistical or structural anomaly (`threat_score >= 0.38`).
    * Sanitizes untrusted SMS payloads against control-token breakout (`<|begin_of_text|>`, role spoofing) and binds to the native `executor_runner` binary (`llama3_2_1b_int4.pte`) to emit a deterministic 5-key **1930 NCRP / Chakshu Portal** forensic JSON packet.
 
 ---

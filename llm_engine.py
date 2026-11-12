@@ -69,7 +69,7 @@ class Stage2ReasoningEngine:
         urls = evidence.get("detected_urls", [])
         entropy = evidence.get("shannon_entropy", evidence.get("url_shannon_entropy", 0.0))
         score = evidence.get("threat_score", evidence.get("scam_score", 0.0))
-        is_threat = evidence.get("is_threat", score >= 0.45)
+        is_threat = evidence.get("is_threat", score >= 0.38)
 
         return {
             "is_threat": bool(is_threat),

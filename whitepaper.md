@@ -55,7 +55,7 @@ To validate real-world edge deployment beyond laptop simulations, all primary be
 |     - Composite Threat Score = Ensemble(C-SIMD, NB Probability, Structural Heuristics)|
 +-------------------------------------------+-------------------------------------------+
                                             |
-                              Is Threat Score >= 0.45?
+                              Is Threat Score >= 0.38?
                                      /              \
                                    NO                YES
                                   /                    \
