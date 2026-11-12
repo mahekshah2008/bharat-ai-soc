@@ -11,6 +11,7 @@ permissions:
 jobs:
   build-and-release-binaries:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
 
     steps:
       - name: Checkout Repository
@@ -21,10 +22,10 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install ARM64 Cross-Compiler
+      - name: Install ARM64 Cross-Compiler (Non-Interactive)
         run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu
+          sudo DEBIAN_FRONTEND=noninteractive apt-get update -y
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu
 
       - name: Compile Standalone Executables (ARM64 aarch64 & Linux x86_64)
         run: |
@@ -37,39 +38,31 @@ jobs:
           gcc -O3 -o bharat-ai-soc-linux-x86_64 bharat_soc_app.c neon_kernel.c -lm
 
           chmod +x bharat-ai-soc-linux-arm64 bharat-ai-soc-linux-x86_64
+          ls -lh bharat-ai-soc-linux-arm64 neon_kernel_arm64.so bharat-ai-soc-linux-x86_64 neon_kernel.so
 
       - name: Run 26-Vector Confusion Matrix Verification
         run: |
           pip install rich psutil pytest
-          python fuzzer.py
+          python fuzzer.py < /dev/null
+          python -c "import json; r = json.load(open('fuzz_report.json')); assert r['metrics']['f1_score_percent'] == 100.0; assert r['confusion_matrix']['FP'] == 0"
 
       - name: Upload Compiled Binaries as Action Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: bharat-ai-soc-compiled-executables
+          if-no-files-found: ignore
           path: |
             bharat-ai-soc-linux-arm64
             neon_kernel_arm64.so
             bharat-ai-soc-linux-x86_64
             neon_kernel.so
-            bharat-ai-soc.exe
-            neon_kernel.dll
+            bin/*
 
-      - name: Publish Official GitHub Release (Deliverable #2)
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v3.0.0
-          name: "Bharat AI-SOC v3.0.0 — Compiled ARM64 & Linux Edge Executables"
-          body: |
-            ### Deliverable #2: Compiled Working Application Binaries
-            - **`bharat-ai-soc-linux-arm64`**: Standalone static ARM64 (`aarch64` ARMv8-A + NEON SIMD) native executable for Raspberry Pi 5, ARM Linux, and Android/Termux.
-            - **`bharat-ai-soc-linux-x86_64`**: Standalone Linux x86_64 native executable.
-            - **`bharat-ai-soc.exe`**: Standalone Windows x86_64 native executable.
-            - **`neon_kernel_arm64.so` / `neon_kernel.so` / `neon_kernel.dll`**: Compiled Stage 1 C-SIMD shared libraries.
-          files: |
-            bharat-ai-soc-linux-arm64
-            neon_kernel_arm64.so
-            bharat-ai-soc-linux-x86_64
-            neon_kernel.so
-            bharat-ai-soc.exe
-            neon_kernel.dll
+      - name: Create or Update GitHub Release v3.0.0 (Deliverable #2)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git tag -f v3.0.0
+          git push origin v3.0.0 --force
+          gh release view v3.0.0 >/dev/null 2>&1 || gh release create v3.0.0 --title "Bharat AI-SOC v3.0.0 — Compiled ARM64 & Linux Edge Executables" --notes "Official pre-compiled standalone ARM64 (aarch64 NEON SIMD) and Linux x86_64 executables for Deliverable #2."
+          gh release upload v3.0.0 bharat-ai-soc-linux-arm64 neon_kernel_arm64.so bharat-ai-soc-linux-x86_64 neon_kernel.so --clobber
