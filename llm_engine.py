@@ -1,4 +1,4 @@
-﻿import os
+import os
 import re
 import json
 import shutil
@@ -284,7 +284,7 @@ if __name__ == "__main__":
     from detector import extract_threat_evidence
     engine = Stage2ReasoningEngine()
 
-    test_sms = "URGENT: SВI асcount blосked! Updаte PAN immediately at https://sbi-secure982a.xyz/kyc"
+    test_sms = "URGENT: S?I ??count bl??ked! Upd?te PAN immediately at https://sbi-secure982a.xyz/kyc"
     ev = extract_threat_evidence(test_sms)
     result = engine.generate_advice(test_sms, ev)
     print("\n--- STAGE 1 -> STAGE 2 INTEGRATED JSON CONTRACT ---")
