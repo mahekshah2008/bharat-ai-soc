@@ -1,8 +1,50 @@
-build-android-apk:
+name: Bharat AI-SOC Edge CI & Release Builder
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  verify-and-build-linux:
+    name: Verify Pipeline & Build Linux/ARM64 Binaries
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies & ARM64 cross-compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+          pip install -r requirements.txt
+
+      - name: Compile x86_64 & ARM64 NEON binaries
+        run: |
+          gcc -O3 -fPIC -shared -o neon_kernel.so neon_kernel.c -lm
+          gcc -O3 -o executor_runner executor_runner.c
+          gcc -O3 -o bharat-ai-soc-linux-x86_64 bharat_soc_app.c neon_kernel.c -lm
+          aarch64-linux-gnu-gcc -O3 -fPIC -shared -march=armv8-a+simd -o neon_kernel_arm64.so neon_kernel.c -lm
+          aarch64-linux-gnu-gcc -O3 -march=armv8-a+simd -o bharat-ai-soc-linux-arm64 bharat_soc_app.c neon_kernel.c -lm
+
+      - name: Run 26-Vector Adversarial Fuzzer & 100-Vector Benchmark
+        run: |
+          python fuzzer.py
+          python benchmark.py
+
+  build-android-apk:
     name: Build Native ARM64 Android APK
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -14,19 +56,22 @@ build-android-apk:
           distribution: 'temurin'
 
       - name: Compile libneon_kernel.so & Package Signed APK
+        shell: bash
         run: |
-          ANDROID_HOME=/usr/local/lib/android/sdk
-          BUILD_TOOLS=$(ls -d $ANDROID_HOME/build-tools/* | tail -n 1)
-          PLATFORM=$(ls -d $ANDROID_HOME/platforms/android-* | tail -n 1)/android.jar
-          NDK=$(ls -d $ANDROID_HOME/ndk/* | tail -n 1)
-          CLANG="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang"
+          set -euxo pipefail
+          SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          BUILD_TOOLS=$(ls -d "$SDK_ROOT/build-tools/"* | sort -V | tail -n 1)
+          PLATFORM=$(ls -d "$SDK_ROOT/platforms/android-"* | sort -V | tail -n 1)/android.jar
+          NDK_DIR="${ANDROID_NDK_LATEST_HOME:-$(ls -d "$SDK_ROOT/ndk/"* | sort -V | tail -n 1)}"
+          CLANG=$(find "$NDK_DIR/toolchains/llvm/prebuilt/" -name "aarch64-linux-android24-clang" | head -n 1)
 
           mkdir -p build_apk/lib/arm64-v8a build_apk/obj build_apk/dex
-          $CLANG -O3 -fPIC -shared -march=armv8-a+simd \
+
+          "$CLANG" -O3 -fPIC -shared -march=armv8-a+simd \
             neon_kernel.c android_app/jni_bridge.c \
             -o build_apk/lib/arm64-v8a/libneon_kernel.so -llog -lm
 
-          $BUILD_TOOLS/aapt2 link -o build_apk/unaligned.apk \
+          "$BUILD_TOOLS/aapt2" link -o build_apk/unaligned.apk \
             -I "$PLATFORM" \
             --manifest android_app/AndroidManifest.xml \
             -A android_app/assets \
@@ -35,19 +80,20 @@ build-android-apk:
           javac -source 11 -target 11 -cp "$PLATFORM" -d build_apk/obj \
             android_app/MainActivity.java build_apk/obj/com/bharataisoc/edge/R.java
 
-          $BUILD_TOOLS/d8 --lib "$PLATFORM" --output build_apk/dex \
-            $(find build_apk/obj -name "*.class")
+          CLASS_FILES=$(find build_apk/obj -name "*.class")
+          "$BUILD_TOOLS/d8" --min-api 24 --lib "$PLATFORM" --output build_apk/dex $CLASS_FILES
 
           cd build_apk
           cp dex/classes.dex .
-          zip -u unaligned.apk classes.dex lib/arm64-v8a/libneon_kernel.so
-          $BUILD_TOOLS/zipalign -f 4 unaligned.apk aligned.apk
+          zip -u unaligned.apk classes.dex
+          zip -u -0 unaligned.apk lib/arm64-v8a/libneon_kernel.so
+          "$BUILD_TOOLS/zipalign" -f -p 4 unaligned.apk aligned.apk
 
           keytool -genkeypair -v -keystore debug.keystore -storepass android \
             -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 \
             -validity 10000 -dname "CN=BharatAISOC,O=EdgeSecurity,C=IN"
 
-          $BUILD_TOOLS/apksigner sign --ks debug.keystore --ks-pass pass:android \
+          "$BUILD_TOOLS/apksigner" sign --ks debug.keystore --ks-pass pass:android \
             --key-pass pass:android --out ../bharat-ai-soc.apk aligned.apk
 
       - name: Upload APK Artifact
@@ -61,3 +107,5 @@ build-android-apk:
         with:
           tag_name: v3.0.0
           files: bharat-ai-soc.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
