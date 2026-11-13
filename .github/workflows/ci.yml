@@ -59,6 +59,12 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
+          # Auto-bump versionCode, versionName, and UI header using GitHub Run Number
+          BUILD_NUM="${{ github.run_number }}"
+          sed -i "s/android:versionCode=\"1\"/android:versionCode=\"${BUILD_NUM}\"/g" android_app/AndroidManifest.xml
+          sed -i "s/android:versionName=\"3.0.0\"/android:versionName=\"3.0.${BUILD_NUM}\"/g" android_app/AndroidManifest.xml
+          sed -i "s/BHARAT AI-SOC v3.0/BHARAT AI-SOC v3.0.${BUILD_NUM}/g" android_app/assets/index.html
+
           SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
           BUILD_TOOLS=$(ls -d "$SDK_ROOT/build-tools/"* | sort -V | tail -n 1)
           PLATFORM=$(ls -d "$SDK_ROOT/platforms/android-"* | sort -V | tail -n 1)/android.jar
@@ -102,10 +108,11 @@ jobs:
           name: bharat-ai-soc-android-apk
           path: bharat-ai-soc.apk
 
-      - name: Attach APK to GitHub Release v3.0.0
+      - name: Sync Release Tag v3.0.0 & Attach Fresh APK
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v3.0.0
+          target_commitish: ${{ github.sha }}
           files: bharat-ai-soc.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
