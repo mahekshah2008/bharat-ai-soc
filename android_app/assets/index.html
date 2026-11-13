@@ -5,22 +5,22 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Bharat AI-SOC Edge</title>
 <style>
-  body { background:#0b0f17; color:#e2e8f0; font-family:monospace; margin:0; padding:16px; }
-  .header { border-bottom:1px solid #1e293b; padding-bottom:10px; margin-bottom:14px; }
-  .badge { background:#064e3b; color:#34d399; padding:3px 8px; border-radius:4px; font-size:11px; }
-  h2 { margin:6px 0 2px; font-size:18px; color:#38bdf8; }
-  .sub { font-size:11px; color:#94a3b8; }
-  textarea { width:100%; box-sizing:border-box; background:#111827; color:#f8fafc; border:1px solid #334155; border-radius:6px; padding:10px; font-family:monospace; font-size:13px; height:95px; }
-  .presets { display:grid; grid-template-columns:1fr 1fr; gap:6px; margin:10px 0; }
-  button { background:#1e293b; color:#cbd5e1; border:1px solid #334155; padding:8px; border-radius:6px; font-family:monospace; font-size:11px; cursor:pointer; }
-  button.scan { width:100%; background:#0284c7; color:#fff; font-weight:bold; font-size:13px; padding:11px; border:none; margin-top:4px; }
-  .card { background:#111827; border:1px solid #1e293b; border-radius:8px; padding:12px; margin-top:14px; display:none; }
+  body { background:#0b0f17; color:#e2e8f0; font-family:monospace; margin:0; padding:8px 10px; }
+  .header { border-bottom:1px solid #1e293b; padding-bottom:5px; margin-bottom:6px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; }
+  .badge { background:#064e3b; color:#34d399; padding:2px 6px; border-radius:4px; font-size:9.5px; }
+  h2 { margin:2px 0 0; font-size:15px; color:#38bdf8; width:100%; }
+  .sub { font-size:9.5px; color:#94a3b8; }
+  textarea { width:100%; box-sizing:border-box; background:#111827; color:#f8fafc; border:1px solid #334155; border-radius:6px; padding:6px; font-family:monospace; font-size:11.5px; height:48px; }
+  .presets { display:grid; grid-template-columns:1fr 1fr; gap:4px; margin:5px 0; }
+  button { background:#1e293b; color:#cbd5e1; border:1px solid #334155; padding:5px; border-radius:5px; font-family:monospace; font-size:10px; cursor:pointer; }
+  button.scan { width:100%; background:#0284c7; color:#fff; font-weight:bold; font-size:11.5px; padding:7px; border:none; margin-top:2px; }
+  .card { background:#111827; border:1px solid #1e293b; border-radius:7px; padding:8px; margin-top:6px; display:none; }
   .threat { border-color:#dc2626; }
   .safe { border-color:#16a34a; }
-  .pill-threat { background:#7f1d1d; color:#fca5a5; padding:2px 8px; border-radius:4px; font-weight:bold; }
-  .pill-safe { background:#14532d; color:#86efac; padding:2px 8px; border-radius:4px; font-weight:bold; }
-  .factors { margin-top:8px; font-size:11px; color:#fbbf24; }
-  pre { background:#090d14; padding:10px; border-radius:6px; font-size:11px; overflow-x:auto; color:#a5f3fc; margin-top:8px; white-space:pre-wrap; word-break:break-word; }
+  .pill-threat { background:#7f1d1d; color:#fca5a5; padding:2px 6px; border-radius:4px; font-weight:bold; font-size:10.5px; }
+  .pill-safe { background:#14532d; color:#86efac; padding:2px 6px; border-radius:4px; font-weight:bold; font-size:10.5px; }
+  .factors { margin-top:4px; font-size:9.5px; color:#fbbf24; }
+  pre { background:#090d14; padding:6px; border-radius:5px; font-size:9.5px; line-height:1.2; overflow-x:auto; color:#a5f3fc; margin-top:5px; margin-bottom:0; white-space:pre-wrap; word-break:break-word; }
 </style>
 </head>
 <body>
@@ -57,7 +57,6 @@ function runScan() {
     return;
   }
 
-  // 1. Native ARM64 C-SIMD Kernel Call via JNI
   let cSimdScore = 0.05;
   let lat = 0.0527;
   if (window.AndroidBridge) {
@@ -68,7 +67,6 @@ function runScan() {
     } catch (e) {}
   }
 
-  // 2. Full Stage-1 Heuristic & Statistical Ensemble (Mirrors detector.py)
   let hScore = 0.0;
   let factors = [];
 
@@ -77,55 +75,46 @@ function runScan() {
     factors.push("ARM_NEON_UTF8_BYTE_ANOMALY");
   }
 
-  // Check Cyrillic / Greek Homoglyphs mixed with Latin
   if (/[\u0400-\u04FF\u0370-\u03FF]/.test(txt) && /[a-zA-Z]/.test(txt)) {
     hScore += 0.55;
     factors.push("IDN_HOMOGLYPH_SPOOFING");
   }
 
-  // Check APK / Executable drop
   if (/\.(apk|exe|bat|scr|zip|rar)\b/i.test(txt)) {
     hScore += 0.55;
     factors.push("MALICIOUS_APK_DROPPER");
   }
 
-  // Check Suspicious URLs / Shorteners / Unofficial TLDs
   if (/(https?:\/\/|www\.|[a-z0-9-]+\.(xyz|top|buzz|club|online|site|info|vip|work|click|link|tk|ml|ga|cf|bit\.ly|tinyurl|t\.me|shorturl))/i.test(txt)) {
     hScore += 0.40;
     factors.push("SUSPICIOUS_PHISHING_URL");
   }
 
-  // Check Digital Arrest / Law Enforcement Impersonation
   if (/\b(digital arrest|cbi|narcotics|ed|customs|parcel seized|skype|police|fir|warrant|supreme court|trai|fedex|drugs)\b/i.test(txt)) {
     hScore += 0.50;
     factors.push("LAW_ENFORCEMENT_COERCION");
   }
 
-  // Check Banking / KYC / Account Suspension Lures
   if (/\b(kyc|pan card|suspended|blocked|deactivated|expire|update now|verify immediately|account frozen|netbanking|yono)\b/i.test(txt)) {
     hScore += 0.38;
     factors.push("KYC_SUSPENSION_LURE");
   }
 
-  // Check Electricity / Utility Disconnection Lures (English + Hindi + Marathi + Hinglish)
   if (/(electricity|power cut|bill unpaid|disconnect|mahavitaran|mseb|bescom|tata power|bijli|connection cut|वीज|बिल|कनेक्शन|बिजली|भुगतान|काट दिया)/i.test(txt)) {
     hScore += 0.45;
     factors.push("UTILITY_DISCONNECTION_SCAM");
   }
 
-  // Check Financial / Lottery / Job / UPI Collect Lures
   if (/\b(lottery|won|prize|jackpot|part-time job|earn rs|daily income|telegram task|collect request|approve upi|enter pin to receive|cashback|loan approved|pre-approved)\b/i.test(txt)) {
     hScore += 0.42;
     factors.push("FINANCIAL_SOCIAL_ENGINEERING");
   }
 
-  // Check Prompt Injection Tokens
   if (/(<\|begin_of_text\|>|ignore previous|system prompt|assistant:|<\|eot_id\|>)/i.test(txt)) {
     hScore += 0.65;
     factors.push("ADVERSARIAL_PROMPT_INJECTION");
   }
 
-  // Check Legitimate Transactional Whitelist (Bank Debits/Credits, IRCTC, Valid OTPs without phishing links)
   const hasBadLink = factors.includes("SUSPICIOUS_PHISHING_URL") || factors.includes("MALICIOUS_APK_DROPPER") || factors.includes("IDN_HOMOGLYPH_SPOOFING");
   const isBenignWhitelisted = !hasBadLink && (
     /\b(debited|credited|upi ref|utr|avl bal|a\/c xx|irctc|pnr|order delivered|out for delivery)\b/i.test(txt) ||
@@ -147,25 +136,24 @@ function runScan() {
     }
   }
 
-  // Determine Dynamic Category
   let category = "BENIGN_TRANSACTIONAL";
-  let guidance = "Cleared by Stage-1 Energy-Preserving Gate (<0.38). Stage-2 LLM kept asleep (0mW).";
+  let guidance = "Cleared by Stage-1 Gate (<0.38). Stage-2 LLM asleep (0mW).";
   if (isThreat) {
     if (factors.includes("LAW_ENFORCEMENT_COERCION")) {
       category = "DIGITAL_ARREST_EXTORTION";
-      guidance = "Police/CBI/Customs NEVER conduct interrogations on video calls. Disconnect immediately.";
+      guidance = "Police/CBI NEVER interrogate on video calls. Disconnect now.";
     } else if (factors.includes("MALICIOUS_APK_DROPPER")) {
       category = "MALWARE_APK_DROPPER";
-      guidance = "Do NOT download or install .apk files from SMS. Banks only use official Play Store apps.";
+      guidance = "Do NOT install .apk files from SMS links.";
     } else if (factors.includes("UTILITY_DISCONNECTION_SCAM")) {
       category = "UTILITY_BILL_EXTORTION";
-      guidance = "Do NOT call unknown numbers or click links for electricity bills. Verify on official state portal.";
+      guidance = "Do NOT click SMS bill links. Verify on official state portal.";
     } else if (factors.includes("ADVERSARIAL_PROMPT_INJECTION")) {
       category = "PROMPT_INJECTION_ATTEMPT";
-      guidance = "Control tokens stripped by Stage-1 sanitizer before reaching Stage-2 LLM.";
+      guidance = "Control tokens stripped by Stage-1 sanitizer.";
     } else {
       category = "PHISHING_SOCIAL_ENGINEERING";
-      guidance = "Do NOT click untrusted links or share OTP/UPI PIN. Verify directly via official app.";
+      guidance = "Do NOT click untrusted links or share OTP/UPI PIN.";
     }
   }
 
@@ -174,19 +162,19 @@ function runScan() {
     threat_level: isThreat ? (combinedScore >= 0.70 ? "CRITICAL" : "HIGH") : "SAFE",
     triggered_signals: factors.length ? factors : ["NONE_DETECTED"],
     forensic_summary: isThreat
-      ? `Stage-1 flagged ${factors.join(" + ")} (Score: ${combinedScore.toFixed(4)} >= 0.38 Gate).`
+      ? `Stage-1 flagged ${factors.join(" + ")} (Score: ${combinedScore.toFixed(4)} >= 0.38).`
       : "No structural, homoglyph, or phishing indicators found.",
     actionable_guidance: guidance,
-    reporting_helpline: isThreat ? "Dial 1930 or report at sancharsaathi.gov.in (Chakshu)" : "N/A"
+    reporting_helpline: isThreat ? "Dial 1930 / sancharsaathi.gov.in (Chakshu)" : "N/A"
   };
 
   box.style.display = 'block';
   box.className = 'card ' + (isThreat ? 'threat' : 'safe');
   box.innerHTML = `
     <div>${isThreat ? '<span class="pill-threat">BLOCKED (STAGE 1 + 2)</span>' : '<span class="pill-safe">PASSED (ENERGY GATE)</span>'}</div>
-    <div style="margin-top:8px;font-size:12px;">
-      <b>C-SIMD Kernel Latency:</b> ${lat.toFixed(4)} ms (Raw C-SIMD: ${cSimdScore.toFixed(4)})<br>
-      <b>Composite Threat Score:</b> ${combinedScore.toFixed(4)} (Gate Threshold: 0.38)
+    <div style="margin-top:5px;font-size:11px;">
+      <b>C-SIMD Latency:</b> ${lat.toFixed(4)} ms (Raw: ${cSimdScore.toFixed(4)})<br>
+      <b>Composite Score:</b> ${combinedScore.toFixed(4)} (Gate: 0.38)
     </div>
     <div class="factors">Signals: ${factors.length ? factors.join(", ") : "CLEAN_ASCII_TRAFFIC"}</div>
     <pre>${JSON.stringify(packet, null, 2)}</pre>
