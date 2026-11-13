@@ -5,8 +5,7 @@
 [![ARM64 NEON SIMD](https://img.shields.io/badge/Engine-ARMv8.2_NEON_C_Kernel-blue)](https://github.com/mahekshah2008/bharat-ai-soc)
 [![ExecuTorch INT4](https://img.shields.io/badge/LLM_Runtime-ExecuTorch_Llama_3.2_1B-green)](https://github.com/mahekshah2008/bharat-ai-soc)
 [![Fuzzer Status](https://img.shields.io/badge/Fuzzer-100%25_Pass_Rate-success)](https://github.com/mahekshah2008/bharat-ai-soc)
-[![Android APK](https://img.shields.io/badge/Deliverable-APK_v3.0.0_Ready-orange)](https://github.com/mahekshah2008/bharat-ai-soc/releases/tag/v3.0.0)
-[![Latest Release](https://img.shields.io/github/v/release/mahekshah2008/bharat-ai-soc?label=APK%20Version&color=orange)](https://github.com/mahekshah2008/bharat-ai-soc/releases/latest)
+[![Latest Release](https://img.shields.io/github/v/release/mahekshah2008/bharat-ai-soc?include_prereleases&label=APK%20Release&color=orange)](https://github.com/mahekshah2008/bharat-ai-soc/releases/latest)
 
 ---
 
