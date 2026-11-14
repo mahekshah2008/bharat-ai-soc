@@ -108,11 +108,16 @@ jobs:
           name: bharat-ai-soc-android-apk
           path: bharat-ai-soc.apk
 
-      - name: Sync Release Tag v3.0.0 & Attach Fresh APK
+      - name: Publish Auto-Versioned GitHub Release (v3.0.X)
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v3.0.0
+          tag_name: v3.0.${{ github.run_number }}
+          name: "Bharat AI-SOC v3.0.${{ github.run_number }} (ARM64 APK & Native Binaries)"
+          body: |
+            Automated CI/CD build `#${{ github.run_number }}` from commit `${{ github.sha }}`.
+            - **Android ARM64 APK:** `bharat-ai-soc.apk` (Version `3.0.${{ github.run_number }}`, Signed, JNI `libneon_kernel.so` included)
           target_commitish: ${{ github.sha }}
           files: bharat-ai-soc.apk
+          make_latest: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
