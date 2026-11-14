@@ -14,7 +14,7 @@ Tested and benchmarked in **Airplane Mode (`✈️`)** on consumer MediaTek Dime
 
 | Phishing / Utility Scam Blocked | Benign UPI Transaction (Passed) | Marathi Electricity Bill Scam | Homoglyph & APK Dropper |
 | :---: | :---: | :---: | :---: |
-| ![Digital Arrest](assets/1000061477.jpg) | ![Benign UPI](assets/1000061471.jpg) | ![Marathi Scam](assets/1000061475.jpg) | ![Homoglyph](assets/1000061473.jpg) |
+| ![Digital Arrest](assets/digital_arrest.jpg) | ![Benign UPI](assets/benign_upi.jpg) | ![Marathi Scam](assets/marathi_scam.jpg) | ![Homoglyph](assets/homoglyph.jpg) |
 | **Latency:** 0.0139 ms<br>**Score:** 0.8800 (Critical) | **Latency:** 0.0185 ms<br>**Score:** 0.0500 (Safe Gate) | **Latency:** 0.0178 ms<br>**Score:** 0.8800 (Critical) | **Latency:** 0.0145 ms<br>**Score:** 0.9900 (Critical) |
 
 ---
